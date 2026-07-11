@@ -1,0 +1,84 @@
+name: Build LAMI
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:   # permet de lancer le build à la main depuis l'onglet Actions
+
+jobs:
+  # ---------------------------------------------------------------- Windows .exe
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Installer Qt (Widgets + Network + WebSockets)
+        uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.7.2'
+          host: windows
+          target: desktop
+          arch: win64_msvc2019_64
+          modules: qtwebsockets
+
+      - name: Installer NuGet
+        uses: NuGet/setup-nuget@v2
+
+      - name: Récupérer le SDK WebView2
+        shell: pwsh
+        run: nuget install Microsoft.Web.WebView2 -Version 1.0.2210.55 -OutputDirectory ${{ github.workspace }}\nuget
+
+      - name: Configurer (CMake)
+        shell: pwsh
+        run: >
+          cmake -B build -G "Visual Studio 17 2022" -A x64
+          -DLAMI_BUILD_TESTS=OFF
+          "-DWEBVIEW2_DIR=${{ github.workspace }}/nuget/Microsoft.Web.WebView2.1.0.2210.55"
+
+      - name: Compiler (backend + coquille)
+        run: cmake --build build --config Release --target lami_backend lami_shell
+
+      - name: Empaqueter
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item build/Release/lami_backend.exe dist/
+          Copy-Item build/Release/lami_shell.exe   dist/
+          Copy-Item -Recurse web dist/web
+          windeployqt --release --no-translations --no-system-d3d-compiler dist/lami_backend.exe
+
+      - name: Publier l'artéfact Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAMI-windows
+          path: dist
+
+  # ------------------------------------------------------------------ Linux (bonus)
+  linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Dépendances
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake build-essential \
+            qt6-base-dev qt6-websockets-dev libwebkit2gtk-4.1-dev pkg-config
+
+      - name: Configurer + compiler
+        run: |
+          cmake -B build -DCMAKE_BUILD_TYPE=Release -DLAMI_BUILD_TESTS=OFF
+          cmake --build build -j$(nproc) --target lami_backend lami_shell
+
+      - name: Empaqueter
+        run: |
+          mkdir -p dist
+          cp build/lami_backend build/lami_shell dist/
+          cp -r web dist/web
+          tar czf LAMI-linux.tar.gz -C dist .
+
+      - name: Publier l'artéfact Linux
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAMI-linux
+          path: LAMI-linux.tar.gz

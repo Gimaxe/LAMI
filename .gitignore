@@ -1,0 +1,33 @@
+# Build
+/build/
+/out/
+/cmake-build-*/
+*.o
+*.obj
+*.exe
+*.app/
+
+# Qt généré
+moc_*.cpp
+qrc_*.cpp
+ui_*.h
+*.moc
+
+# IDE
+/.vscode/
+/.idea/
+*.user
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Secrets — NE JAMAIS committer de token GitHub / client_id / webhook Discord
+*.token
+.token
+.client_id
+secrets.json
+.env
+
+# Données locales éventuelles
+/web-dist/
