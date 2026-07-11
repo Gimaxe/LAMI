@@ -1140,7 +1140,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.2.0";
+        const LAMI_VERSION = "0.3.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1349,6 +1349,21 @@
                 lami.on('publishProgress', function (m) {
                     const st = document.getElementById('publish-progress-status');
                     if (st) st.innerText = m.step;
+                });
+
+                // Progression du LANCEMENT (téléchargement + démarrage).
+                lami.on('launchStatus', function (m) {
+                    const st = document.getElementById('play-progress-dashboard-status');
+                    if (st) st.innerText = m.step;
+                });
+                lami.on('launchProgress', function (m) {
+                    const bar = document.getElementById('play-progress-dashboard-bar');
+                    const pct = document.getElementById('play-progress-dashboard-percent');
+                    if (bar) bar.style.width = m.percent + '%';
+                    if (pct) pct.innerText = m.percent + '%';
+                });
+                lami.on('launched', function () {
+                    showToast("Minecraft est lancé ! 🎮", "success");
                 });
                 lami.on('downloadDone', function (m) {
                     if (m.id !== activeDownload.serverId) return;
@@ -2597,15 +2612,45 @@
         }
 
         // --- SIMULATION DU LANCEMENT DU JEU ---
+        // Réinitialise l'UI du bouton Jouer.
+        function resetPlayUI() {
+            isPlaying = false;
+            const btnPlay = document.getElementById('btn-play-dashboard');
+            const wrapper = document.getElementById('play-progress-dashboard-wrapper');
+            const bar = document.getElementById('play-progress-dashboard-bar');
+            const percent = document.getElementById('play-progress-dashboard-percent');
+            if (btnPlay) { btnPlay.disabled = false; btnPlay.classList.remove('opacity-50', 'cursor-not-allowed'); }
+            if (wrapper) wrapper.classList.add('hidden');
+            if (bar) bar.style.width = '0%';
+            if (percent) percent.innerText = '0%';
+        }
+
         function simulateGameLaunch() {
             if (!isMicrosoftAuthed) {
                 showToast("Vous devez être connecté pour jouer.", "error");
                 return;
             }
-
             if (isPlaying) return;
-            isPlaying = true;
 
+            // Lancement RÉEL via le backend (télécharge si besoin puis démarre le jeu).
+            const srv = currentlySelectedServer;
+            if (window.lami && window.lami.connected && srv && srv.id) {
+                isPlaying = true;
+                const btnPlay = document.getElementById('btn-play-dashboard');
+                const wrapper = document.getElementById('play-progress-dashboard-wrapper');
+                const status = document.getElementById('play-progress-dashboard-status');
+                if (btnPlay) { btnPlay.disabled = true; btnPlay.classList.add('opacity-50', 'cursor-not-allowed'); }
+                if (wrapper) { wrapper.classList.remove('hidden'); wrapper.classList.add('flex'); }
+                if (status) status.innerText = "Préparation…";
+                const pseudo = (document.getElementById('player-name').innerText || 'Player').trim();
+                lami.call('launch', { id: srv.id, username: pseudo })
+                    .then(function () { showToast("Minecraft démarre !", "success"); resetPlayUI(); })
+                    .catch(function (err) { showToast("Lancement échoué : " + err.message, "error"); resetPlayUI(); });
+                return;
+            }
+
+            // --- Simulation (page ouverte sans backend) ---
+            isPlaying = true;
             const btnPlay = document.getElementById('btn-play-dashboard');
             const wrapper = document.getElementById('play-progress-dashboard-wrapper');
             const bar = document.getElementById('play-progress-dashboard-bar');

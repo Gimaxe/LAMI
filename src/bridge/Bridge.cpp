@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
+#include <QProcess>
 #include <QStandardPaths>
 #include <memory>
 
@@ -67,6 +68,8 @@ void Bridge::handle(const QJsonObject &request)
         login(id);
     } else if (method == "startDownload") {
         startDownload(id, params);
+    } else if (method == "launch") {
+        launch(id, params);
     } else if (method == "publishServer") {
         publishServer(id, params);
     } else if (method == "listRoles") {
@@ -236,6 +239,76 @@ void Bridge::startDownload(int id, const QJsonObject &params)
         dl->start(plan.downloads);
     });
 
+    mgr->plan(serverId, session);
+}
+
+void Bridge::launch(int id, const QJsonObject &params)
+{
+    const QString serverId = params.value("id").toString();
+    const QString username  = params.value("username").toString("Player");
+    if (serverId.isEmpty()) { replyError(id, "Identifiant de serveur manquant."); return; }
+
+    auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
+                                    config::token(), config::dataRoot(), config::javaPath(), this);
+
+    // Session : la vraie si connecté (Microsoft approuvé), sinon un profil
+    // "hors-ligne" pour au moins démarrer le jeu (menu principal).
+    MinecraftSession session;
+    session.name  = m_session.valid ? m_session.name : username;
+    session.uuid  = m_session.valid ? m_session.uuid : "6ce55042b80845c4999b54c99cd96398";
+    session.minecraftToken = m_session.valid ? m_session.minecraftToken : "0";
+    session.valid = true;
+
+    connect(mgr, &InstanceManager::progress, this, [this, serverId](const QString &s) {
+        emit event(QJsonObject{{"event", "launchStatus"}, {"id", serverId}, {"step", s}});
+    });
+    connect(mgr, &InstanceManager::failed, this, [this, id, mgr](const QString &e) {
+        replyError(id, e); mgr->deleteLater();
+    });
+    connect(mgr, &InstanceManager::planReady, this,
+            [this, id, serverId, mgr](const LaunchPlan &plan) {
+        auto *dl = new Downloader(6, this);
+        connect(dl, &Downloader::progress, this, [this, serverId](int done, int total) {
+            emit event(QJsonObject{{"event", "launchProgress"}, {"id", serverId},
+                                   {"done", done}, {"total", total},
+                                   {"percent", total > 0 ? (done * 100 / total) : 0}});
+        });
+        connect(dl, &Downloader::finished, this,
+                [this, id, serverId, plan, mgr, dl](int, int failed) {
+            dl->deleteLater(); mgr->deleteLater();
+
+            // Marque les mods installés (sync non-destructif).
+            SyncManager sync(plan.gameDir);
+            QStringList modPaths;
+            for (const ModEntry &m : plan.server.mods) modPaths << modLocalPath(m);
+            if (!modPaths.isEmpty()) sync.markInstalled(modPaths);
+
+            // Prépare les dossiers puis démarre le jeu (QProcess détaché).
+            QDir().mkpath(plan.gameDir);
+            QStringList cmd = plan.launchCommand;
+            if (cmd.isEmpty()) { replyError(id, "Commande de lancement vide."); return; }
+            const QString program = cmd.takeFirst();
+
+            emit event(QJsonObject{{"event", "launchStatus"}, {"id", serverId},
+                                   {"step", failed > 0
+                                        ? QStringLiteral("Démarrage du jeu (%1 fichier(s) en échec)…").arg(failed)
+                                        : QStringLiteral("Démarrage du jeu…")}});
+
+            auto *proc = new QProcess(this);
+            proc->setWorkingDirectory(plan.gameDir);
+            connect(proc, &QProcess::started, this, [this, id, serverId]() {
+                emit event(QJsonObject{{"event", "launched"}, {"id", serverId}});
+                replyOk(id, QJsonObject{{"id", serverId}, {"launched", true}});
+            });
+            connect(proc, &QProcess::errorOccurred, this,
+                    [this, id, proc](QProcess::ProcessError) {
+                replyError(id, "Impossible de lancer Java : " + proc->errorString()
+                               + " (Java 17 est-il installé ?)");
+            });
+            proc->start(program, cmd);
+        });
+        dl->start(plan.downloads);
+    });
     mgr->plan(serverId, session);
 }
 
