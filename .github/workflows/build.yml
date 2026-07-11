@@ -21,6 +21,14 @@ jobs:
           arch: win64_msvc2019_64
           modules: qtwebsockets
 
+      - name: Environnement MSVC
+        uses: ilammy/msvc-dev-cmd@v1
+        with:
+          arch: x64
+
+      - name: Installer Ninja
+        uses: seanmiddleditch/gha-setup-ninja@master
+
       - name: Installer NuGet
         uses: NuGet/setup-nuget@v2
 
@@ -28,22 +36,24 @@ jobs:
         shell: pwsh
         run: nuget install Microsoft.Web.WebView2 -Version 1.0.2210.55 -OutputDirectory ${{ github.workspace }}\nuget
 
-      - name: Configurer (CMake)
+      - name: Configurer (CMake + Ninja)
         shell: pwsh
         run: >
-          cmake -B build -G "Visual Studio 17 2022" -A x64
+          cmake -B build -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
           -DLAMI_BUILD_TESTS=OFF
+          "-DCMAKE_PREFIX_PATH=$env:QT_ROOT_DIR"
           "-DWEBVIEW2_DIR=${{ github.workspace }}/nuget/Microsoft.Web.WebView2.1.0.2210.55"
 
       - name: Compiler (backend + coquille)
-        run: cmake --build build --config Release --target lami_backend lami_shell
+        run: cmake --build build --target lami_backend lami_shell
 
       - name: Empaqueter
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path dist | Out-Null
-          Copy-Item build/Release/lami_backend.exe dist/
-          Copy-Item build/Release/lami_shell.exe   dist/
+          Copy-Item build/lami_backend.exe dist/
+          Copy-Item build/lami_shell.exe   dist/
           Copy-Item -Recurse web dist/web
           windeployqt --release --no-translations --no-system-d3d-compiler dist/lami_backend.exe
 
