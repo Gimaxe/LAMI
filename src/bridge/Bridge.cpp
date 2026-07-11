@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QCryptographicHash>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QNetworkAccessManager>
@@ -23,12 +24,22 @@
 
 namespace lami {
 
+// SHA-256 hex d'une chaîne (mot de passe).
+static QString sha256Hex(const QString &s)
+{
+    return QString::fromLatin1(
+        QCryptographicHash::hash(s.toUtf8(), QCryptographicHash::Sha256).toHex());
+}
+
+static QJsonArray namesOf(const QVector<ModEntry> &list)
+{
+    QJsonArray a;
+    for (const ModEntry &m : list) a.append(m.file);
+    return a;
+}
+
 QJsonObject serverToUiJson(const ServerInfo &s)
 {
-    QJsonArray mods;
-    for (const ModEntry &m : s.mods)
-        mods.append(m.file);
-
     const QString loader = s.loaderVersion.isEmpty()
         ? s.loader
         : QStringLiteral("%1 (%2)").arg(s.loader, s.loaderVersion);
@@ -39,11 +50,11 @@ QJsonObject serverToUiJson(const ServerInfo &s)
         {"ip", s.address},
         {"version", s.minecraftVersion},
         {"loader", loader.isEmpty() ? QStringLiteral("Vanilla") : loader},
-        {"mods", mods},
-        // Champs présents dans l'UI, pas encore gérés par le backend :
-        {"plugins", QJsonArray{}},
-        {"resourcePacks", QJsonArray{}},
-        {"shaders", QJsonArray{}},
+        {"mods", namesOf(s.mods)},
+        {"plugins", namesOf(s.plugins)},
+        {"resourcePacks", namesOf(s.resourcePacks)},
+        {"shaders", namesOf(s.shaders)},
+        {"hasPassword", !s.passwordHash.isEmpty()},   // jamais le hash ni le mdp
         {"installed", false},
     };
 }
@@ -402,6 +413,7 @@ void Bridge::startDownload(int id, const QJsonObject &params)
 
     auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
                                     config::token(), config::dataRoot(), config::javaPath(), this);
+    mgr->setPassword(params.value("password").toString());
 
     // Session neutre : le téléchargement des fichiers ne dépend pas de l'identité
     // (seul le LANCEMENT a besoin du vrai token).
@@ -459,6 +471,7 @@ void Bridge::launch(int id, const QJsonObject &params)
 
     auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
                                     config::token(), config::dataRoot(), config::javaPath(), this);
+    mgr->setPassword(params.value("password").toString());
 
     // Session : la vraie si connecté (Microsoft approuvé), sinon un profil
     // "hors-ligne" pour au moins démarrer le jeu (menu principal).
@@ -564,6 +577,10 @@ void Bridge::publishServer(int id, const QJsonObject &params)
     srv.id               = params.value("id").toString().trimmed();
     if (srv.id.isEmpty())
         srv.id = slugify(srv.name);
+    // Mot de passe : on ne stocke QUE le hash (jamais le mot de passe en clair).
+    const QString pwd = params.value("password").toString();
+    if (!pwd.isEmpty())
+        srv.passwordHash = sha256Hex(pwd);
     srv.valid = true;
 
     if (srv.name.isEmpty() || srv.address.isEmpty() || srv.id.isEmpty()) {

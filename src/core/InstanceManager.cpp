@@ -1,5 +1,6 @@
 #include "core/InstanceManager.h"
 
+#include <QCryptographicHash>
 #include <QDir>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -88,6 +89,16 @@ void InstanceManager::planByAddress(const QString &address, const MinecraftSessi
 
 void InstanceManager::onServerFetched(const ServerInfo &server)
 {
+    // Serveur protégé par mot de passe : on vérifie contre le hash.
+    if (!server.passwordHash.isEmpty()) {
+        const QString h = QString::fromLatin1(
+            QCryptographicHash::hash(m_password.toUtf8(), QCryptographicHash::Sha256).toHex());
+        if (h != server.passwordHash) {
+            emit failed("Mot de passe incorrect.");
+            return;
+        }
+    }
+
     m_server = server;
     emit progress(QString("Serveur « %1 » (Minecraft %2, %3). Résolution de la version…")
                       .arg(server.name, server.minecraftVersion, server.loader));

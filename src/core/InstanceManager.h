@@ -52,6 +52,9 @@ public:
     // Idem mais résout d'abord l'adresse (IP/sous-domaine) via servers/index.json.
     void planByAddress(const QString &address, const MinecraftSession &session);
 
+    // Mot de passe fourni par le joueur (vérifié contre le hash du serveur).
+    void setPassword(const QString &password) { m_password = password; }
+
 signals:
     void progress(const QString &step);
     void planReady(const lami::LaunchPlan &plan);
@@ -79,6 +82,7 @@ private:
     JavaProvisioner *m_java;
     QNetworkAccessManager *m_net;
     QString m_resolvedJavaPath;   // JRE provisionné (sinon repli sur m_javaPath)
+    QString m_password;           // mot de passe saisi par le joueur
 
     QString m_token;
     QString m_dataRoot;

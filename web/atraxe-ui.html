@@ -507,10 +507,8 @@
                         <!-- Version de Minecraft (liste Mojang + saisie manuelle) -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Version de Minecraft</label>
-                            <select id="pub-version" onchange="toggleManual('pub-version')" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition cursor-pointer">
-                                <option value="1.20.1">1.20.1</option>
-                            </select>
-                            <input type="text" id="pub-version-manual" placeholder="ex : 1.20.6" class="hidden mt-1 bg-dark-input border border-neutral-800/80 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-brand">
+                            <input type="text" id="pub-version" list="pub-version-list" value="1.20.1" placeholder="ex : 1.20.1" autocomplete="off" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
+                            <datalist id="pub-version-list"></datalist>
                         </div>
 
                         <!-- Type de Loader -->
@@ -535,10 +533,8 @@
                         <!-- Version du Loader (liste + saisie manuelle) -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Version du Loader</label>
-                            <select id="pub-loader-version" onchange="toggleManual('pub-loader-version')" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition cursor-pointer">
-                                <option value="__latest__">Dernière (auto)</option>
-                            </select>
-                            <input type="text" id="pub-loader-version-manual" placeholder="ex : 0.15.11" class="hidden mt-1 bg-dark-input border border-neutral-800/80 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-brand">
+                            <input type="text" id="pub-loader-version" list="pub-loader-version-list" placeholder="Dernière (auto)" autocomplete="off" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
+                            <datalist id="pub-loader-version-list"></datalist>
                         </div>
                     </div>
 
@@ -1153,9 +1149,30 @@
         </div>
     </div>
 
+    <!-- Mot de passe serveur (demandé au moment d'installer un serveur protégé) -->
+    <div id="password-modal" class="hidden fixed inset-0 z-[115] flex items-center justify-center bg-neutral-950/90 backdrop-blur-sm">
+        <div class="bg-dark-card border border-brand-500/30 rounded-3xl p-8 max-w-sm w-full mx-4 flex flex-col gap-5 shadow-2xl">
+            <div class="flex flex-col items-center gap-3 text-center">
+                <div class="w-14 h-14 bg-brand/15 border border-brand/30 rounded-2xl flex items-center justify-center text-brand-500">
+                    <i data-lucide="lock" class="w-7 h-7"></i>
+                </div>
+                <div>
+                    <h2 class="text-xl font-black text-white">Serveur protégé</h2>
+                    <p id="password-modal-sub" class="text-sm text-neutral-400 mt-2">Entrez le mot de passe pour installer ce serveur.</p>
+                </div>
+            </div>
+            <input type="password" id="password-modal-input" placeholder="Mot de passe" autocomplete="off" onkeydown="if(event.key==='Enter')submitServerPassword()" class="bg-dark-input border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-brand w-full">
+            <p id="password-modal-error" class="hidden text-xs text-red-400 -mt-2"></p>
+            <div class="flex gap-3">
+                <button onclick="closeServerPassword()" class="flex-1 py-3 px-4 bg-neutral-800 hover:bg-neutral-700 text-white font-bold rounded-xl transition-all">Annuler</button>
+                <button onclick="submitServerPassword()" class="flex-1 py-3 px-4 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl transition-all">Installer</button>
+            </div>
+        </div>
+    </div>
+
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.10.0";
+        const LAMI_VERSION = "0.11.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1171,8 +1188,11 @@
             progress: 0,
             statusText: '',
             intervalId: null,
-            serverObj: null
+            serverObj: null,
+            password: ''
         };
+        let pendingPasswordCb = null;   // callback quand le mot de passe est validé
+        let serverPasswords = {};       // id serveur -> mot de passe (mémorisé pour la session)
         let currentlySelectedServer = null;
         let runningId = null;   // id du serveur dont le jeu tourne
         let updateUrl = '';     // URL de la dernière release (si mise à jour dispo)
@@ -2412,7 +2432,39 @@
         }
 
         // --- GESTION DES TÉLÉCHARGEMENTS ET INSTALLATIONS ---
-        function startDownload(serverId) {
+        // Ouvre la modale de mot de passe ; cb(pwd) est appelé si l'utilisateur valide.
+        function promptServerPassword(srv, cb) {
+            pendingPasswordCb = cb;
+            const modal = document.getElementById('password-modal');
+            const input = document.getElementById('password-modal-input');
+            const sub = document.getElementById('password-modal-sub');
+            const err = document.getElementById('password-modal-error');
+            if (sub) sub.innerText = 'Entrez le mot de passe pour installer « ' + srv.name + ' ».';
+            if (err) err.classList.add('hidden');
+            if (input) input.value = '';
+            if (modal) { modal.classList.remove('hidden'); }
+            if (window.lucide) lucide.createIcons();
+            if (input) setTimeout(function () { input.focus(); }, 50);
+        }
+        function closeServerPassword() {
+            pendingPasswordCb = null;
+            const modal = document.getElementById('password-modal');
+            if (modal) modal.classList.add('hidden');
+        }
+        function submitServerPassword() {
+            const input = document.getElementById('password-modal-input');
+            const pwd = input ? input.value : '';
+            if (!pwd) {
+                const err = document.getElementById('password-modal-error');
+                if (err) { err.innerText = 'Mot de passe requis.'; err.classList.remove('hidden'); }
+                return;
+            }
+            const cb = pendingPasswordCb;
+            closeServerPassword();
+            if (cb) cb(pwd);
+        }
+
+        function startDownload(serverId, password) {
             if (activeDownload.serverId !== null) {
                 showToast("Un téléchargement est déjà actif. Veuillez l'annuler d'abord.", "error");
                 return;
@@ -2426,6 +2478,14 @@
                 showToast("Erreur: Serveur introuvable.", "error");
                 return;
             }
+
+            // Serveur protégé : on demande le mot de passe avant d'installer.
+            if (srv.hasPassword && (password === undefined || password === null)) {
+                promptServerPassword(srv, function (pwd) { startDownload(serverId, pwd); });
+                return;
+            }
+            activeDownload.password = password || '';
+            if (srv.hasPassword) serverPasswords[srv.id] = password || '';
 
             activeDownload.serverId = srv.id;
             activeDownload.progress = 0;
@@ -2446,7 +2506,7 @@
 
             // Téléchargement RÉEL via le backend (progression par événements).
             if (window.lami && window.lami.connected) {
-                lami.call('startDownload', { id: srv.id }).catch(function (err) {
+                lami.call('startDownload', { id: srv.id, password: activeDownload.password || '' }).catch(function (err) {
                     showToast("Téléchargement échoué : " + err.message, "error");
                     resetDownloadState();
                     renderServersSidebar();
@@ -2744,6 +2804,15 @@
 
             // Lancement RÉEL via le backend (télécharge si besoin puis démarre le jeu).
             const srv = currentlySelectedServer;
+            // Serveur protégé sans mot de passe mémorisé : on le demande d'abord.
+            if (srv && srv.id && srv.hasPassword && serverPasswords[srv.id] === undefined
+                && window.lami && window.lami.connected) {
+                promptServerPassword(srv, function (pwd) {
+                    serverPasswords[srv.id] = pwd;
+                    simulateGameLaunch();
+                });
+                return;
+            }
             if (window.lami && window.lami.connected && srv && srv.id) {
                 isPlaying = true;
                 const btnPlay = document.getElementById('btn-play-dashboard');
@@ -2754,7 +2823,7 @@
                 if (status) status.innerText = "Préparation…";
                 const pseudo = (document.getElementById('player-name').innerText || 'Player').trim();
                 const ramGb = parseInt(document.getElementById('setting-ram-slider').value, 10) || 6;
-                lami.call('launch', { id: srv.id, username: pseudo, ramGb: ramGb })
+                lami.call('launch', { id: srv.id, username: pseudo, ramGb: ramGb, password: serverPasswords[srv.id] || '' })
                     .then(function () { /* l'événement 'launched' gère l'UI (bouton Fermer) */ })
                     .catch(function (err) { showToast("Lancement échoué : " + err.message, "error"); resetPlayUI(); setPlayButtonPlay(); });
                 return;
@@ -2885,39 +2954,29 @@
         }
 
         // --- SIMULATION PUBLICATION DU SERVEUR ---
-        // Remplit un <select> avec des versions + option de saisie manuelle.
-        function fillVersionSelect(selectId, versions, opts) {
-            const sel = document.getElementById(selectId);
-            if (!sel) return;
-            const prev = sel.value;
-            sel.innerHTML = '';
-            if (opts && opts.latest) sel.add(new Option('Dernière (auto)', '__latest__'));
-            (versions || []).forEach(function (v) { sel.add(new Option(v, v)); });
-            sel.add(new Option('✏️ Saisir manuellement…', '__manual__'));
-            if (prev && Array.prototype.some.call(sel.options, function (o) { return o.value === prev; }))
-                sel.value = prev;
+        // Remplit le <datalist> associé à un champ éditable : les valeurs sont des
+        // suggestions ; l'utilisateur peut effacer et taper directement sa propre valeur.
+        function fillVersionSelect(inputId, versions) {
+            const dl = document.getElementById(inputId + '-list');
+            if (!dl) return;
+            dl.innerHTML = '';
+            (versions || []).forEach(function (v) {
+                const o = document.createElement('option');
+                o.value = v;
+                dl.appendChild(o);
+            });
         }
-        // Affiche/masque le champ manuel selon la sélection.
-        function toggleManual(baseId) {
-            const sel = document.getElementById(baseId);
-            const inp = document.getElementById(baseId + '-manual');
-            if (sel && inp) inp.classList.toggle('hidden', sel.value !== '__manual__');
-        }
-        // Valeur effective : manuel si "__manual__", vide si "__latest__", sinon la sélection.
+        // Valeur effective : simplement ce qui est saisi dans le champ (vide = auto).
         function selectedVersion(baseId) {
-            const sel = document.getElementById(baseId);
-            const inp = document.getElementById(baseId + '-manual');
-            if (!sel) return '';
-            if (sel.value === '__manual__') return inp ? inp.value.trim() : '';
-            if (sel.value === '__latest__') return '';
-            return sel.value;
+            const inp = document.getElementById(baseId);
+            return inp ? inp.value.trim() : '';
         }
         // Charge les versions du loader sélectionné dans le formulaire de publication.
         function loadPubLoaderVersions() {
             if (!window.lami || !window.lami.connected) return;
             const loader = document.getElementById('pub-loader').value;
             lami.call('listLoaderVersions', { loader: loader }).then(function (r) {
-                fillVersionSelect('pub-loader-version', r.versions || [], { latest: true });
+                fillVersionSelect('pub-loader-version', r.versions || []);
             }).catch(function () {});
         }
         function onPubLoaderChange() { loadPubLoaderVersions(); }
@@ -2925,10 +2984,9 @@
         function populatePublishVersions() {
             if (!window.lami || !window.lami.connected) return;
             lami.call('listMcVersions').then(function (r) {
-                fillVersionSelect('pub-version', r.versions || [], {});
-                const sel = document.getElementById('pub-version');
-                if (sel && Array.prototype.some.call(sel.options, function (o) { return o.value === '1.20.1'; }))
-                    sel.value = '1.20.1';
+                fillVersionSelect('pub-version', r.versions || []);
+                const inp = document.getElementById('pub-version');
+                if (inp && !inp.value.trim()) inp.value = '1.20.1';
             }).catch(function () {});
             loadPubLoaderVersions();
         }

@@ -39,6 +39,7 @@ struct ServerInfo {
     QVector<ModEntry> plugins;       // plugins (serveur)
     QVector<ModEntry> resourcePacks; // resource packs (client)
     QVector<ModEntry> shaders;       // shaders (client)
+    QString passwordHash;      // SHA-256 du mot de passe (JAMAIS le mot de passe en clair)
     bool    valid = false;     // false si le parsing a échoué
 
     // Accès à une catégorie par son nom (assets::*).
