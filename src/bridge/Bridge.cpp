@@ -3,6 +3,7 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonArray>
+#include <QJsonDocument>
 #include <QProcess>
 #include <QStandardPaths>
 #include <memory>
@@ -70,6 +71,12 @@ void Bridge::handle(const QJsonObject &request)
         startDownload(id, params);
     } else if (method == "launch") {
         launch(id, params);
+    } else if (method == "uninstall") {
+        uninstall(id, params);
+    } else if (method == "getSettings") {
+        getSettings(id);
+    } else if (method == "saveSettings") {
+        saveSettings(id, params);
     } else if (method == "publishServer") {
         publishServer(id, params);
     } else if (method == "listRoles") {
@@ -106,6 +113,46 @@ void Bridge::listServers(int id)
     });
 
     m_gh->fetchAllServers();
+}
+
+namespace {
+QString settingsPath() { return QDir(config::dataRoot()).filePath("settings.json"); }
+int readRamGb() {
+    QFile f(settingsPath());
+    int ram = 6;
+    if (f.open(QIODevice::ReadOnly))
+        ram = QJsonDocument::fromJson(f.readAll()).object().value("ramGb").toInt(6);
+    return qBound(2, ram, 32);
+}
+} // namespace
+
+// Désinstalle un serveur : supprime son instance locale.
+void Bridge::uninstall(int id, const QJsonObject &params)
+{
+    const QString sid = params.value("id").toString();
+    if (sid.isEmpty()) { replyError(id, "Identifiant manquant."); return; }
+    QDir dir(QDir(config::dataRoot()).filePath("instances/" + sid));
+    if (dir.exists())
+        dir.removeRecursively();
+    replyOk(id, QJsonObject{{"id", sid}});
+}
+
+void Bridge::getSettings(int id)
+{
+    replyOk(id, QJsonObject{{"ramGb", readRamGb()}});
+}
+
+void Bridge::saveSettings(int id, const QJsonObject &params)
+{
+    const int ram = qBound(2, params.value("ramGb").toInt(6), 32);
+    QDir().mkpath(config::dataRoot());
+    QFile f(settingsPath());
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        replyError(id, "Écriture des réglages impossible.");
+        return;
+    }
+    f.write(QJsonDocument(QJsonObject{{"ramGb", ram}}).toJson());
+    replyOk(id, QJsonObject{{"ramGb", ram}});
 }
 
 // Liste les serveurs réellement INSTALLÉS localement (dossier instances/<id>).
@@ -248,6 +295,11 @@ void Bridge::launch(int id, const QJsonObject &params)
     const QString username  = params.value("username").toString("Player");
     if (serverId.isEmpty()) { replyError(id, "Identifiant de serveur manquant."); return; }
 
+    // RAM à allouer (Go) : depuis les params, sinon depuis les réglages.
+    int ramGb = params.value("ramGb").toInt(0);
+    if (ramGb <= 0) ramGb = readRamGb();
+    ramGb = qBound(2, ramGb, 32);
+
     auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
                                     config::token(), config::dataRoot(), config::javaPath(), this);
 
@@ -266,7 +318,7 @@ void Bridge::launch(int id, const QJsonObject &params)
         replyError(id, e); mgr->deleteLater();
     });
     connect(mgr, &InstanceManager::planReady, this,
-            [this, id, serverId, mgr](const LaunchPlan &plan) {
+            [this, id, serverId, mgr, ramGb](const LaunchPlan &plan) {
         auto *dl = new Downloader(6, this);
         connect(dl, &Downloader::progress, this, [this, serverId](int done, int total) {
             emit event(QJsonObject{{"event", "launchProgress"}, {"id", serverId},
@@ -274,7 +326,7 @@ void Bridge::launch(int id, const QJsonObject &params)
                                    {"percent", total > 0 ? (done * 100 / total) : 0}});
         });
         connect(dl, &Downloader::finished, this,
-                [this, id, serverId, plan, mgr, dl](int, int failed) {
+                [this, id, serverId, plan, mgr, dl, ramGb](int, int failed) {
             dl->deleteLater(); mgr->deleteLater();
 
             // Marque les mods installés (sync non-destructif).
@@ -288,6 +340,9 @@ void Bridge::launch(int id, const QJsonObject &params)
             QStringList cmd = plan.launchCommand;
             if (cmd.isEmpty()) { replyError(id, "Commande de lancement vide."); return; }
             const QString program = cmd.takeFirst();
+            // Allocation mémoire (RAM des réglages) en tête des arguments JVM.
+            cmd.prepend(QStringLiteral("-Xmx%1G").arg(ramGb));
+            cmd.prepend(QStringLiteral("-Xms%1G").arg(qMax(1, ramGb / 2)));
 
             emit event(QJsonObject{{"event", "launchStatus"}, {"id", serverId},
                                    {"step", failed > 0

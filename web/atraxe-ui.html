@@ -1140,7 +1140,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.4.0";
+        const LAMI_VERSION = "0.5.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1177,6 +1177,10 @@
             lami.call('listInstalled').then(function (r) {
                 installedIds = new Set(r.installed || []);
                 renderServersSidebar();
+            }).catch(function () {});
+            lami.call('getSettings').then(function (s) {
+                const slider = document.getElementById('setting-ram-slider');
+                if (slider && s.ramGb) { slider.value = s.ramGb; updateRamSliderValue(s.ramGb); }
             }).catch(function () {});
         }
 
@@ -2546,17 +2550,24 @@
         // --- SUPPRESSION DU SERVEUR DU LAUNCHER ---
         function deleteInstalledServer() {
             if (!currentlySelectedServer) return;
+            const srv = currentlySelectedServer;
+            const name = srv.name;
 
-            const name = currentlySelectedServer.name;
-            currentlySelectedServer.installed = false;
+            const finish = function () {
+                srv.installed = false;
+                installedIds.delete(srv.id);
+                showToast(`Le serveur "${name}" a été désinstallé.`, "success");
+                goBackToSearch();
+                renderServersSidebar();
+            };
 
-            showToast(`Le serveur "${name}" a été désinstallé avec succès.`, "success");
-
-            // Rediriger vers l'écran de recherche
-            goBackToSearch();
-
-            // Mettre à jour l'affichage de la barre latérale
-            renderServersSidebar();
+            if (window.lami && window.lami.connected) {
+                lami.call('uninstall', { id: srv.id }).then(finish).catch(function (err) {
+                    showToast("Désinstallation échouée : " + err.message, "error");
+                });
+            } else {
+                finish();
+            }
         }
 
         // --- CRÉATION / AJOUT / RETRAIT SUR LES 4 DOSSIERS INTERACTIFS ---
@@ -2643,7 +2654,8 @@
                 if (wrapper) { wrapper.classList.remove('hidden'); wrapper.classList.add('flex'); }
                 if (status) status.innerText = "Préparation…";
                 const pseudo = (document.getElementById('player-name').innerText || 'Player').trim();
-                lami.call('launch', { id: srv.id, username: pseudo })
+                const ramGb = parseInt(document.getElementById('setting-ram-slider').value, 10) || 6;
+                lami.call('launch', { id: srv.id, username: pseudo, ramGb: ramGb })
                     .then(function () { showToast("Minecraft démarre !", "success"); resetPlayUI(); })
                     .catch(function (err) { showToast("Lancement échoué : " + err.message, "error"); resetPlayUI(); });
                 return;
@@ -3180,8 +3192,14 @@
 
         function saveSettingSection(sectionName) {
             if (sectionName === 'RAM') {
-                const ramVal = document.getElementById('setting-ram-slider').value;
-                showToast(`Allocation RAM mise à jour : max ${ramVal} Go !`, "success");
+                const ramVal = parseInt(document.getElementById('setting-ram-slider').value, 10);
+                if (window.lami && window.lami.connected) {
+                    lami.call('saveSettings', { ramGb: ramVal })
+                        .then(function () { showToast(`Allocation RAM enregistrée : ${ramVal} Go.`, "success"); })
+                        .catch(function (err) { showToast("Échec : " + err.message, "error"); });
+                } else {
+                    showToast(`Allocation RAM : ${ramVal} Go (démo).`, "success");
+                }
             } else {
                 showToast(`Réglages de la section "${sectionName}" mis à jour !`, "success");
             }

@@ -40,6 +40,9 @@ private:
     void login(int id);
     void startDownload(int id, const QJsonObject &params);
     void launch(int id, const QJsonObject &params);
+    void uninstall(int id, const QJsonObject &params);
+    void getSettings(int id);
+    void saveSettings(int id, const QJsonObject &params);
     void publishServer(int id, const QJsonObject &params);
     void listRoles(int id);
     void setRole(int id, const QJsonObject &params);
