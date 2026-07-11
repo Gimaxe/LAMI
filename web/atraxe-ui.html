@@ -1114,6 +1114,29 @@
 
     </main>
 
+    <!-- ÉCRAN DE CONNEXION (bloque l'app tant qu'on n'est pas connecté) -->
+    <div id="login-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
+        <div class="bg-dark-card border border-neutral-800 rounded-3xl p-10 max-w-md w-full mx-4 flex flex-col items-center gap-6 shadow-2xl">
+            <div class="w-16 h-16 bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl flex items-center justify-center shadow-lg shadow-brand-500/20">
+                <span class="text-white font-extrabold text-3xl tracking-wider">A</span>
+            </div>
+            <div class="text-center">
+                <h2 class="text-2xl font-black text-white">Bienvenue sur LAMI</h2>
+                <p class="text-sm text-neutral-400 mt-2">Connecte-toi avec ton compte Microsoft (Minecraft) pour continuer.</p>
+            </div>
+            <button onclick="doMicrosoftLogin()" class="w-full py-3.5 px-4 bg-[#2f2f2f] hover:bg-[#3f3f3f] active:bg-[#1f1f1f] border border-neutral-700/60 rounded-xl flex items-center justify-center gap-3 text-sm font-bold text-neutral-100 transition-all">
+                <svg class="w-5 h-5" viewBox="0 0 23 23" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M0 0H11V11H0V0Z" fill="#F25022"/>
+                    <path d="M12 0H23V11H12V0Z" fill="#7FBA00"/>
+                    <path d="M0 12H11V23H0V12Z" fill="#00A4EF"/>
+                    <path d="M12 12H23V23H12V12Z" fill="#FFB900"/>
+                </svg>
+                <span>Se connecter avec Microsoft</span>
+            </button>
+            <p class="text-[11px] text-neutral-600 text-center">Ton compte sert uniquement à lancer Minecraft avec ton profil.</p>
+        </div>
+    </div>
+
     <script>
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1281,6 +1304,9 @@
 
             // Configurer le système Drag & Drop sur le visualiseur de skins
             setupDragAndDrop();
+
+            // Si pas connecté, on bloque l'app derrière l'écran de connexion.
+            if (!isMicrosoftAuthed) showLoginModal();
 
             // Charger les serveurs réels du repo dès que le backend est connecté
             // (et tout de suite s'il l'est déjà).
@@ -1537,44 +1563,55 @@
         }
 
         // --- SIMULATION AUTH MICROSOFT ---
-        function toggleAuthSimulation() {
-            const nameEl = document.getElementById('player-name');
-            const avatarEl = document.getElementById('player-avatar');
-            const btnText = document.getElementById('btn-microsoft-text');
+        function showLoginModal() { document.getElementById('login-modal').classList.remove('hidden'); }
+        function hideLoginModal() { document.getElementById('login-modal').classList.add('hidden'); }
 
-            if (isMicrosoftAuthed) {
-                // Déconnexion
-                isMicrosoftAuthed = false;
-                nameEl.innerText = "Non connecté";
-                avatarEl.src = "https://api.mineatar.io/face/00000000000000000000000000000000?scale=8";
-                btnText.innerText = "Connexion";
-                document.getElementById('player-role').classList.add('hidden');
-                setDemoRole('player');   // repli sur les onglets de base
-                showToast("Compte déconnecté.", "info");
-            } else if (window.lami && window.lami.connected) {
-                // Connexion RÉELLE via le backend (device code Microsoft).
-                btnText.innerText = "Connexion…";
-                lami.call('login').then(function (session) {
-                    isMicrosoftAuthed = true;
-                    nameEl.innerText = session.name;
-                    avatarEl.src = `https://api.mineatar.io/face/${session.uuid}?scale=8`;
-                    btnText.innerText = "Déconnexion";
-                    setDemoRole(currentRole);
-                    showToast(`Connecté : ${session.name}`, "success");
-                }).catch(function (err) {
-                    btnText.innerText = "Connexion";
-                    showToast("Échec de connexion : " + err.message, "error");
-                });
-            } else {
-                // Démo (page ouverte sans backend)
+        // Connexion Microsoft.
+        // ⚠️ PROVISOIRE : tant que l'app Azure n'est pas approuvée par Microsoft,
+        // on SIMULE une connexion réussie. Une fois approuvée, remplacer le corps
+        // de cette fonction par un vrai lami.call('login') (voir plus bas, commenté).
+        function doMicrosoftLogin() {
+            isMicrosoftAuthed = true;
+            document.getElementById('player-name').innerText = "gimaxe";
+            document.getElementById('player-avatar').src =
+                "https://api.mineatar.io/face/6ce55042b80845c4999b54c99cd96398?scale=8";
+            document.getElementById('btn-microsoft-text').innerText = "Déconnexion";
+            setDemoRole(currentRole);   // affiche le rôle sous le pseudo
+            hideLoginModal();
+            showToast("Connecté avec Microsoft.", "success");
+
+            /* --- VERSION RÉELLE (à activer quand Azure aura approuvé l'app) ---
+            lami.call('login').then(function (session) {
                 isMicrosoftAuthed = true;
-                const activeSkin = skinCache[activeSlotIndex] || skinCache[0];
-                nameEl.innerText = activeSkin.empty ? "Valkyrie_91" : activeSkin.name;
-                avatarEl.src = `https://api.mineatar.io/face/${activeSkin.empty ? 'c06f89064c8a49119c29ea1dbd1aab82' : activeSkin.name}?scale=8`;
-                btnText.innerText = "Déconnexion";
+                document.getElementById('player-name').innerText = session.name;
+                document.getElementById('player-avatar').src =
+                    `https://api.mineatar.io/face/${session.uuid}?scale=8`;
+                document.getElementById('btn-microsoft-text').innerText = "Déconnexion";
                 setDemoRole(currentRole);
-                showToast("Connexion réussie via Microsoft Live.", "success");
-            }
+                hideLoginModal();
+                showToast(`Connecté : ${session.name}`, "success");
+            }).catch(function (err) {
+                showToast("Échec de connexion : " + err.message, "error");
+            });
+            */
+        }
+
+        function logout() {
+            isMicrosoftAuthed = false;
+            document.getElementById('player-name').innerText = "Non connecté";
+            document.getElementById('player-avatar').src =
+                "https://api.mineatar.io/face/00000000000000000000000000000000?scale=8";
+            document.getElementById('btn-microsoft-text').innerText = "Connexion";
+            document.getElementById('player-role').classList.add('hidden');
+            setDemoRole('player');
+            showToast("Compte déconnecté.", "info");
+            showLoginModal();   // re-bloque l'app
+        }
+
+        // Bouton de la barre latérale : bascule connexion / déconnexion.
+        function toggleAuthSimulation() {
+            if (isMicrosoftAuthed) logout();
+            else doMicrosoftLogin();
         }
 
         // ================= SYSTEME SKIN 3D INTERACTIF CAROUSEL =================
