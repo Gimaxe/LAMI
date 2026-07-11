@@ -12,6 +12,7 @@
 
 #include "github/GitHubClient.h"
 #include "minecraft/FabricMeta.h"
+#include "minecraft/ForgeInstaller.h"
 #include "minecraft/JavaProvisioner.h"
 #include "minecraft/LaunchBuilder.h"
 #include "minecraft/MojangMeta.h"
@@ -31,6 +32,7 @@ InstanceManager::InstanceManager(QString owner, QString repo, QString branch,
     , m_meta(new MojangMeta(this))
     , m_fabric(new FabricMeta(this))
     , m_java(nullptr)
+    , m_forge(nullptr)
     , m_net(new QNetworkAccessManager(this))
     , m_token(std::move(token))
     , m_dataRoot(std::move(dataRoot))
@@ -50,13 +52,13 @@ InstanceManager::InstanceManager(QString owner, QString repo, QString branch,
     connect(m_java, &JavaProvisioner::progress, this, &InstanceManager::progress);
     connect(m_java, &JavaProvisioner::ready, this, [this](const QString &javaPath) {
         m_resolvedJavaPath = javaPath;
-        fetchAssetIndex();
+        afterJavaReady();
     });
     connect(m_java, &JavaProvisioner::errorOccurred, this, [this](const QString &e) {
         // Java auto indisponible → on tente le java du système (repli).
         emit progress("Java auto indisponible (" + e + "). Utilisation du java système.");
         m_resolvedJavaPath = m_javaPath;
-        fetchAssetIndex();
+        afterJavaReady();
     });
 }
 
@@ -119,17 +121,49 @@ void InstanceManager::onVersionResolved(const VersionInfo &version)
         m_fabric->resolve(m_server.minecraftVersion, m_server.loaderVersion, base);
         return;
     }
+    // Forge/NeoForge : l'installeur officiel (qui patche le client via ses
+    // processors) a besoin de Java. On provisionne Java d'abord, puis on lance
+    // l'installeur dans afterJavaReady(), et on fusionne le profil produit.
     if (loader == "forge" || loader == "neoforge") {
-        // Ces loaders reposent sur un installeur qui patche le client (processors),
-        // pas sur un simple profil JSON. Non supporté pour l'instant → on refuse
-        // clairement plutôt que de lancer du vanilla par erreur.
-        emit failed(QString("Loader « %1 » pas encore supporté (installeur à "
-                            "base de patching). Fabric, Quilt et vanilla sont OK.")
-                        .arg(loader));
+        emit progress(QString("Version vanilla OK. Préparation de %1…")
+                          .arg(loader == "neoforge" ? "NeoForge" : "Forge"));
+        provisionJavaThenAssets();
         return;
     }
     // vanilla (ou "" / valeur inconnue traitée comme vanilla)
     provisionJavaThenAssets();
+}
+
+void InstanceManager::afterJavaReady()
+{
+    const QString loader = m_server.loader.trimmed().toLower();
+    if ((loader == "forge" || loader == "neoforge") && !m_forgeDone) {
+        if (!m_forge) {
+            m_forge = new ForgeInstaller(m_dataRoot, m_resolvedJavaPath, this);
+            connect(m_forge, &ForgeInstaller::progress, this, &InstanceManager::progress);
+            connect(m_forge, &ForgeInstaller::resolved, this, &InstanceManager::onForgeResolved);
+            connect(m_forge, &ForgeInstaller::errorOccurred, this, &InstanceManager::failed);
+        }
+        m_forge->resolve(m_server.minecraftVersion, loader, m_server.loaderVersion);
+        return;
+    }
+    fetchAssetIndex();
+}
+
+void InstanceManager::onForgeResolved(const ForgeProfile &profile)
+{
+    // Fusion Forge/NeoForge par-dessus la version vanilla : mainClass remplacée,
+    // libraries ajoutées avant les vanilla, arguments JVM et jeu complétés.
+    m_version.mainClass = profile.mainClass;
+    m_version.libraries = profile.libraries + m_version.libraries;
+    m_version.jvmArgs  += profile.jvmArgs;
+    m_version.gameArgs += profile.gameArgs;
+    m_forgeDone = true;
+
+    emit progress(QString("Loader fusionné (%1 lib(s), mainClass %2).")
+                      .arg(profile.libraries.size())
+                      .arg(profile.mainClass));
+    fetchAssetIndex();
 }
 
 void InstanceManager::provisionJavaThenAssets()
@@ -195,6 +229,11 @@ void InstanceManager::assemblePlan(const QByteArray &assetIndexJson)
 
     // 2) libraries
     for (const Library &lib : m_version.libraries) {
+        // Libs sans URL = produites localement par les processors Forge/NeoForge :
+        // elles existent déjà dans libraries/ (rien à télécharger), on les garde
+        // néanmoins dans le classpath via m_version.libraries.
+        if (lib.url.isEmpty())
+            continue;
         DownloadTask t;
         t.url = lib.url;
         t.dest = QDir(librariesRoot()).filePath(lib.path);

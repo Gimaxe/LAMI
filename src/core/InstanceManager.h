@@ -18,7 +18,9 @@ class GitHubClient;
 class MojangMeta;
 class FabricMeta;
 class JavaProvisioner;
+class ForgeInstaller;
 struct FabricProfile;
+struct ForgeProfile;
 
 // Plan complet pour préparer et lancer une instance de serveur.
 struct LaunchPlan {
@@ -64,7 +66,9 @@ private:
     void onServerFetched(const ServerInfo &server);
     void onVersionResolved(const VersionInfo &version);
     void onFabricResolved(const FabricProfile &profile);
+    void onForgeResolved(const ForgeProfile &profile);
     void provisionJavaThenAssets();
+    void afterJavaReady();
     void fetchAssetIndex();
     void assemblePlan(const QByteArray &assetIndexJson);
 
@@ -80,9 +84,11 @@ private:
     MojangMeta   *m_meta;
     FabricMeta   *m_fabric;
     JavaProvisioner *m_java;
+    ForgeInstaller  *m_forge;     // installeur Forge/NeoForge (créé à la demande)
     QNetworkAccessManager *m_net;
     QString m_resolvedJavaPath;   // JRE provisionné (sinon repli sur m_javaPath)
     QString m_password;           // mot de passe saisi par le joueur
+    bool    m_forgeDone = false;  // profil Forge déjà fusionné ?
 
     QString m_token;
     QString m_dataRoot;

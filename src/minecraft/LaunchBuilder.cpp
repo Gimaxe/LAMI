@@ -58,6 +58,10 @@ QStringList LaunchBuilder::build(const VersionInfo &version,
         {"launcher_name", launcherName},
         {"launcher_version", launcherVersion},
         {"classpath", classpath(version, paths)},
+        // Placeholders utilisés par Forge/NeoForge (module path, séparateur…).
+        {"library_directory", paths.librariesRoot},
+        {"libraries_directory", paths.librariesRoot},
+        {"classpath_separator", classpathSeparator()},
     };
 
     QStringList argv;

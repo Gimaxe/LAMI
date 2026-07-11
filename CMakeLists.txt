@@ -33,6 +33,7 @@ set(LAMI_SOURCES
     src/minecraft/Downloader.cpp
     src/minecraft/LaunchBuilder.cpp
     src/minecraft/FabricMeta.cpp
+    src/minecraft/ForgeInstaller.cpp
     src/core/InstanceManager.cpp
     src/minecraft/JavaProvisioner.cpp
     src/core/Publisher.cpp
@@ -98,6 +99,7 @@ set(BRIDGE_CORE_SOURCES
     src/minecraft/VersionInfo.cpp
     src/minecraft/MojangMeta.cpp
     src/minecraft/FabricMeta.cpp
+    src/minecraft/ForgeInstaller.cpp
     src/minecraft/Downloader.cpp
     src/minecraft/LaunchBuilder.cpp
 )
@@ -201,6 +203,15 @@ if(LAMI_BUILD_TESTS)
     )
     target_include_directories(lami_test_java PRIVATE src)
     target_link_libraries(lami_test_java PRIVATE Qt${QT_VERSION_MAJOR}::Network)
+
+    qt_add_executable(lami_test_forge
+        tests/test_forge.cpp
+        src/minecraft/ForgeInstaller.cpp
+        src/minecraft/FabricMeta.cpp
+        src/minecraft/VersionInfo.cpp
+    )
+    target_include_directories(lami_test_forge PRIVATE src)
+    target_link_libraries(lami_test_forge PRIVATE Qt${QT_VERSION_MAJOR}::Network)
 
     qt_add_executable(lami_test_publish
         tests/test_publish.cpp
