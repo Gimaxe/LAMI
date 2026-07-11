@@ -94,6 +94,10 @@ VersionInfo parseVersion(const QJsonObject &o, const QString &id)
     v.assetIndexUrl  = assetIndex.value("url").toString();
     v.assetIndexSha1 = assetIndex.value("sha1").toString();
 
+    const QJsonObject java = o.value("javaVersion").toObject();
+    v.javaComponent = java.value("component").toString("jre-legacy");
+    v.javaMajor     = java.value("majorVersion").toInt(8);
+
     const QJsonObject client = o.value("downloads").toObject().value("client").toObject();
     v.clientUrl  = client.value("url").toString();
     v.clientSha1 = client.value("sha1").toString();

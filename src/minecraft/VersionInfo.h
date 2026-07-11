@@ -26,6 +26,9 @@ struct VersionInfo {
     QString assetIndexUrl;   // JSON listant les assets
     QString assetIndexSha1;
 
+    QString javaComponent;   // runtime Java Mojang requis, ex. "java-runtime-gamma"
+    int     javaMajor = 8;   // version majeure de Java (8, 17, 21…)
+
     QString clientUrl;       // client.jar
     QString clientSha1;
     qint64  clientSize = 0;

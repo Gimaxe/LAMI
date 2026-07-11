@@ -34,6 +34,7 @@ set(LAMI_SOURCES
     src/minecraft/LaunchBuilder.cpp
     src/minecraft/FabricMeta.cpp
     src/core/InstanceManager.cpp
+    src/minecraft/JavaProvisioner.cpp
     src/core/Publisher.cpp
     src/core/ModScanner.cpp
     src/core/ModArchive.cpp
@@ -89,6 +90,7 @@ set(BRIDGE_CORE_SOURCES
     src/sync/SyncManager.cpp
     src/roles/Permissions.cpp
     src/core/InstanceManager.cpp
+    src/minecraft/JavaProvisioner.cpp
     src/core/Publisher.cpp
     src/core/ModScanner.cpp
     src/core/ModArchive.cpp
@@ -171,6 +173,7 @@ if(LAMI_BUILD_TESTS)
     qt_add_executable(lami_test_instance
         tests/test_instance.cpp
         src/core/InstanceManager.cpp
+        src/minecraft/JavaProvisioner.cpp
         src/github/Models.cpp
         src/github/GitHubClient.cpp
         src/sync/SyncManager.cpp
@@ -190,6 +193,14 @@ if(LAMI_BUILD_TESTS)
     )
     target_include_directories(lami_test_fabric PRIVATE src)
     target_link_libraries(lami_test_fabric PRIVATE Qt${QT_VERSION_MAJOR}::Network)
+
+    qt_add_executable(lami_test_java
+        tests/test_java.cpp
+        src/minecraft/JavaProvisioner.cpp
+        src/minecraft/Downloader.cpp
+    )
+    target_include_directories(lami_test_java PRIVATE src)
+    target_link_libraries(lami_test_java PRIVATE Qt${QT_VERSION_MAJOR}::Network)
 
     qt_add_executable(lami_test_publish
         tests/test_publish.cpp

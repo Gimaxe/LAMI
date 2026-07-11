@@ -17,6 +17,7 @@ namespace lami {
 class GitHubClient;
 class MojangMeta;
 class FabricMeta;
+class JavaProvisioner;
 struct FabricProfile;
 
 // Plan complet pour préparer et lancer une instance de serveur.
@@ -60,6 +61,7 @@ private:
     void onServerFetched(const ServerInfo &server);
     void onVersionResolved(const VersionInfo &version);
     void onFabricResolved(const FabricProfile &profile);
+    void provisionJavaThenAssets();
     void fetchAssetIndex();
     void assemblePlan(const QByteArray &assetIndexJson);
 
@@ -74,7 +76,9 @@ private:
     GitHubClient *m_gh;
     MojangMeta   *m_meta;
     FabricMeta   *m_fabric;
+    JavaProvisioner *m_java;
     QNetworkAccessManager *m_net;
+    QString m_resolvedJavaPath;   // JRE provisionné (sinon repli sur m_javaPath)
 
     QString m_token;
     QString m_dataRoot;

@@ -11,6 +11,7 @@
 
 #include "github/GitHubClient.h"
 #include "minecraft/FabricMeta.h"
+#include "minecraft/JavaProvisioner.h"
 #include "minecraft/LaunchBuilder.h"
 #include "minecraft/MojangMeta.h"
 #include "sync/SyncManager.h"
@@ -28,6 +29,7 @@ InstanceManager::InstanceManager(QString owner, QString repo, QString branch,
     , m_gh(new GitHubClient(std::move(owner), std::move(repo), std::move(branch), this))
     , m_meta(new MojangMeta(this))
     , m_fabric(new FabricMeta(this))
+    , m_java(nullptr)
     , m_net(new QNetworkAccessManager(this))
     , m_token(std::move(token))
     , m_dataRoot(std::move(dataRoot))
@@ -42,6 +44,19 @@ InstanceManager::InstanceManager(QString owner, QString repo, QString branch,
     connect(m_meta, &MojangMeta::errorOccurred, this, &InstanceManager::failed);
     connect(m_fabric, &FabricMeta::resolved, this, &InstanceManager::onFabricResolved);
     connect(m_fabric, &FabricMeta::errorOccurred, this, &InstanceManager::failed);
+
+    m_java = new JavaProvisioner(m_dataRoot, this);
+    connect(m_java, &JavaProvisioner::progress, this, &InstanceManager::progress);
+    connect(m_java, &JavaProvisioner::ready, this, [this](const QString &javaPath) {
+        m_resolvedJavaPath = javaPath;
+        fetchAssetIndex();
+    });
+    connect(m_java, &JavaProvisioner::errorOccurred, this, [this](const QString &e) {
+        // Java auto indisponible → on tente le java du système (repli).
+        emit progress("Java auto indisponible (" + e + "). Utilisation du java système.");
+        m_resolvedJavaPath = m_javaPath;
+        fetchAssetIndex();
+    });
 }
 
 // --- Disposition des dossiers ----------------------------------------------
@@ -103,8 +118,14 @@ void InstanceManager::onVersionResolved(const VersionInfo &version)
         return;
     }
     // vanilla (ou "" / valeur inconnue traitée comme vanilla)
-    emit progress("Version résolue. Récupération de l'index des assets…");
-    fetchAssetIndex();
+    provisionJavaThenAssets();
+}
+
+void InstanceManager::provisionJavaThenAssets()
+{
+    emit progress("Vérification de Java…");
+    m_java->provision(m_version.javaComponent.isEmpty()
+                          ? QStringLiteral("jre-legacy") : m_version.javaComponent);
 }
 
 void InstanceManager::onFabricResolved(const FabricProfile &profile)
@@ -117,10 +138,10 @@ void InstanceManager::onFabricResolved(const FabricProfile &profile)
     m_version.libraries = profile.libraries + m_version.libraries;
     m_version.jvmArgs  += profile.jvmArgs;
 
-    emit progress(QString("Fabric fusionné (%1 lib(s), mainClass %2). Assets…")
+    emit progress(QString("Fabric fusionné (%1 lib(s), mainClass %2).")
                       .arg(profile.libraries.size())
                       .arg(profile.mainClass));
-    fetchAssetIndex();
+    provisionJavaThenAssets();
 }
 
 void InstanceManager::fetchAssetIndex()
@@ -221,7 +242,7 @@ void InstanceManager::assemblePlan(const QByteArray &assetIndexJson)
 
     // 5) commande de lancement
     LaunchPaths paths;
-    paths.javaPath      = m_javaPath;
+    paths.javaPath      = m_resolvedJavaPath.isEmpty() ? m_javaPath : m_resolvedJavaPath;
     paths.gameDir       = instanceDir(m_server.id);
     paths.assetsRoot    = assetsRoot();
     paths.librariesRoot = librariesRoot();
