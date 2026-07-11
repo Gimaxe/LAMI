@@ -1158,7 +1158,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.6.0";
+        const LAMI_VERSION = "0.7.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -2306,6 +2306,8 @@
                 document.getElementById('inst-srv-logo').innerText = server.name.substring(0, 2).toUpperCase();
 
                 renderInstalledServerAssets(server);
+                // Le bouton reflète l'état réel : Fermer si CE serveur tourne, sinon Lancer.
+                syncPlayButton(server.id);
             } else {
                 // Si non installé, on affiche l'interface d'installation et on montre la barre de recherche
                 document.getElementById('search-bar-container').classList.remove('hidden');
@@ -2673,25 +2675,36 @@
         }
 
         // --- SIMULATION DU LANCEMENT DU JEU ---
-        // Bascule le bouton en mode « Lancer le Jeu ».
+        // Classes rouges (mode Fermer) qui priment sur le dégradé cyan.
+        const RED_CLASSES = ['!from-red-600', '!to-red-700', 'hover:!from-red-500', 'hover:!to-red-600',
+                             'shadow-red-500/20', 'hover:shadow-red-500/30'];
+
+        // Bascule le bouton en mode « Lancer le Jeu » (cyan).
         function setPlayButtonPlay() {
             const b = document.getElementById('btn-play-dashboard');
             if (!b) return;
             b.disabled = false;
-            b.classList.remove('opacity-50', 'cursor-not-allowed');
+            b.classList.remove('opacity-50', 'cursor-not-allowed', ...RED_CLASSES);
             b.innerHTML = '<i data-lucide="play" class="w-5 h-5 fill-white"></i><span>Lancer le Jeu</span>';
             b.onclick = simulateGameLaunch;
             if (window.lucide) lucide.createIcons();
         }
-        // Bascule le bouton en mode « Fermer Minecraft ».
+        // Bascule le bouton en mode « Fermer Minecraft » (rouge).
         function setPlayButtonStop() {
             const b = document.getElementById('btn-play-dashboard');
             if (!b) return;
             b.disabled = false;
             b.classList.remove('opacity-50', 'cursor-not-allowed');
-            b.innerHTML = '<i data-lucide="square" class="w-5 h-5"></i><span>Fermer Minecraft</span>';
+            b.classList.add(...RED_CLASSES);
+            b.innerHTML = '<i data-lucide="power" class="w-5 h-5"></i><span>Fermer Minecraft</span>';
             b.onclick = stopRunningGame;
             if (window.lucide) lucide.createIcons();
+        }
+
+        // Synchronise le bouton avec l'état réel du jeu pour un serveur donné.
+        function syncPlayButton(serverId) {
+            if (runningId && runningId === serverId) setPlayButtonStop();
+            else setPlayButtonPlay();
         }
         function stopRunningGame() {
             if (window.lami && window.lami.connected && runningId) {
