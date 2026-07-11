@@ -61,6 +61,8 @@ void Bridge::handle(const QJsonObject &request)
         resolveServer(id, params);
     } else if (method == "listServers") {
         listServers(id);
+    } else if (method == "listInstalled") {
+        listInstalled(id);
     } else if (method == "login") {
         login(id);
     } else if (method == "startDownload") {
@@ -103,16 +105,27 @@ void Bridge::listServers(int id)
     m_gh->fetchAllServers();
 }
 
+// Liste les serveurs réellement INSTALLÉS localement (dossier instances/<id>).
+void Bridge::listInstalled(int id)
+{
+    QDir dir(config::dataRoot() + "/instances");
+    QJsonArray arr;
+    for (const QString &d : dir.entryList(QDir::Dirs | QDir::NoDotAndDotDot))
+        arr.append(d);
+    replyOk(id, QJsonObject{{"installed", arr}});
+}
+
 void Bridge::login(int id)
 {
     const QString clientId = config::clientId();
     if (clientId.isEmpty()) {
-        replyError(id, "client_id Azure manquant (~/LAMI/.client_id).");
+        replyError(id, "client_id Azure manquant (.client_id).");
         return;
     }
+    // Nouvelle tentative : on annule une éventuelle connexion en cours.
     if (m_auth) {
-        replyError(id, "Connexion déjà en cours.");
-        return;
+        m_auth->deleteLater();
+        m_auth = nullptr;
     }
 
     m_auth = new MicrosoftAuth(clientId, this);

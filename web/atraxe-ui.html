@@ -148,9 +148,9 @@
                     
                     <div class="flex-1 min-w-0">
                         <div class="flex items-center gap-1.5">
-                            <span id="player-name" class="font-bold text-sm text-neutral-100 truncate">Valkyrie_91</span>
+                            <span id="player-name" class="font-bold text-sm text-neutral-100 truncate">Non connecté</span>
                         </div>
-                        <span id="player-role" class="block text-[11px] font-semibold text-brand-500 mt-0.5">Joueur</span>
+                        <span id="player-role" class="hidden text-[11px] font-semibold text-brand-500 mt-0.5">Joueur</span>
                     </div>
                 </div>
 
@@ -162,7 +162,7 @@
                         <path d="M0 12H11V23H0V12Z" fill="#00A4EF"/>
                         <path d="M12 12H23V23H12V12Z" fill="#FFB900"/>
                     </svg>
-                    <span id="btn-microsoft-text">Déconnexion</span>
+                    <span id="btn-microsoft-text">Connexion</span>
                 </button>
             </div>
         </div>
@@ -1117,7 +1117,7 @@
     <script>
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
-        let isMicrosoftAuthed = true;
+        let isMicrosoftAuthed = false;   // démarre DÉCONNECTÉ (l'auth réelle se fait au clic)
         let isPlaying = false;
         let isPublishing = false;
         let isNavCollapsed = false;
@@ -1133,18 +1133,24 @@
         };
         let currentlySelectedServer = null;
 
-        // Serveurs réels chargés depuis le backend (null = pas encore chargé → démo).
-        let liveServers = null;
+        // Catalogue = tous les serveurs du repo (pour la recherche). La barre latérale
+        // « Mes Serveurs » n'affiche, elle, QUE les serveurs installés localement.
+        let catalog = null;
+        let installedIds = new Set();
         function getServers() {
-            return (liveServers && liveServers.length) ? liveServers : mockServers;
+            return (catalog && catalog.length) ? catalog : mockServers;
         }
-        // Récupère la liste réelle des serveurs du repo via le pont.
+        // Récupère le catalogue (repo) + la liste des serveurs installés via le pont.
         function refreshServersFromBackend() {
             if (!window.lami || !window.lami.connected) return;
             lami.call('listServers').then(function (r) {
-                liveServers = (r.servers || []).map(normalizeServer);
+                catalog = (r.servers || []).map(normalizeServer);
                 renderServersSidebar();
             }).catch(function () { /* garde la démo en cas d'échec */ });
+            lami.call('listInstalled').then(function (r) {
+                installedIds = new Set(r.installed || []);
+                renderServersSidebar();
+            }).catch(function () {});
         }
 
         // --- CACHE DES SKINS (3 slots max) ---
@@ -1315,7 +1321,8 @@
                     const srv = activeDownload.serverObj;
                     resetDownloadState();
                     if (srv) {
-                        srv.installed = (m.failed === 0);
+                        srv.installed = true;
+                        installedIds.add(m.id);   // apparaît dans « Mes Serveurs »
                         if (m.failed === 0) showToast(`Installation de "${srv.name}" terminée !`, "success");
                         else showToast(`Installation terminée avec ${m.failed} échec(s).`, "error");
                     }
@@ -1373,16 +1380,26 @@
             const listContainer = document.getElementById('servers-sidebar-list');
             const countBadge = document.getElementById('servers-count');
             
-            const list = getServers();
+            // « Mes Serveurs » = uniquement les serveurs installés localement.
+            const source = (catalog && catalog.length) ? catalog : [];
+            const list = source.filter(s => installedIds.has(s.id) || s.installed);
             listContainer.innerHTML = '';
             countBadge.innerText = list.length;
+
+            if (list.length === 0) {
+                listContainer.innerHTML = `
+                    <div class="text-center text-[11px] text-neutral-600 px-2 py-6 leading-relaxed">
+                        Aucun serveur installé.<br>Recherche une adresse puis installe-le.
+                    </div>`;
+                return;
+            }
 
             list.forEach(srv => {
                 const button = document.createElement('button');
                 const isDownloadingThis = (activeDownload.serverId === srv.id);
-                
-                // Opacité réduite pour les serveurs non installés pour un visuel propre
-                let opacityClass = srv.installed ? 'opacity-100' : 'opacity-60 hover:opacity-100';
+
+                // Ici tous sont installés.
+                let opacityClass = 'opacity-100';
                 
                 button.className = `server-item-btn flex items-center justify-between p-3 rounded-xl bg-neutral-950/40 hover:bg-neutral-900 border border-neutral-850/40 hover:border-neutral-700/80 transition-all text-left w-full group ${opacityClass}`;
                 button.onclick = () => selectServer(srv);
@@ -1511,9 +1528,12 @@
                 btnAdmin.classList.remove('hidden');
             }
 
-            // Affiche le rôle sous le pseudo.
+            // Le rôle ne s'affiche sous le pseudo que si l'utilisateur est connecté.
             const roleEl = document.getElementById('player-role');
-            if (roleEl) roleEl.innerText = ROLE_LABELS[role] || 'Joueur';
+            if (roleEl) {
+                roleEl.innerText = ROLE_LABELS[role] || 'Joueur';
+                roleEl.classList.toggle('hidden', !isMicrosoftAuthed);
+            }
         }
 
         // --- SIMULATION AUTH MICROSOFT ---
@@ -1528,7 +1548,8 @@
                 nameEl.innerText = "Non connecté";
                 avatarEl.src = "https://api.mineatar.io/face/00000000000000000000000000000000?scale=8";
                 btnText.innerText = "Connexion";
-                
+                document.getElementById('player-role').classList.add('hidden');
+                setDemoRole('player');   // repli sur les onglets de base
                 showToast("Compte déconnecté.", "info");
             } else if (window.lami && window.lami.connected) {
                 // Connexion RÉELLE via le backend (device code Microsoft).
@@ -2085,8 +2106,9 @@
                         showToast(`Serveur "${server.name}" trouvé !`, "success");
                     })
                     .catch(function () {
-                        // Introuvable côté backend → repli local (démo).
-                        searchServerLocal(raw.toLowerCase());
+                        // Vraiment introuvable dans le repo → on n'invente rien.
+                        goBackToSearch();
+                        showToast(`Aucun serveur trouvé pour « ${raw} ».`, "error");
                     });
                 return;
             }

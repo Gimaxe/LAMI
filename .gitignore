@@ -31,3 +31,4 @@ secrets.json
 
 # Données locales éventuelles
 /web-dist/
+.push_token

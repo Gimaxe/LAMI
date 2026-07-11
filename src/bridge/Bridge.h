@@ -36,6 +36,7 @@ private:
     // Méthodes exposées à l'UI.
     void resolveServer(int id, const QJsonObject &params);
     void listServers(int id);
+    void listInstalled(int id);
     void login(int id);
     void startDownload(int id, const QJsonObject &params);
     void publishServer(int id, const QJsonObject &params);
