@@ -279,6 +279,10 @@ elseif(WIN32)
     # par le paquet nuget Microsoft.Web.WebView2, dont le chemin est passé via
     # -DWEBVIEW2_DIR=... (voir le workflow CI).
     add_executable(lami_shell WIN32 src/shell/shell_main.cpp)
+    # Sous-système GUI (pas de console) mais point d'entrée main() standard.
+    if(MSVC)
+        target_link_options(lami_shell PRIVATE /ENTRY:mainCRTStartup)
+    endif()
     target_include_directories(lami_shell PRIVATE third_party/webview)
     if(DEFINED WEBVIEW2_DIR)
         target_include_directories(lami_shell PRIVATE ${WEBVIEW2_DIR}/build/native/include)
