@@ -67,6 +67,10 @@ void Bridge::handle(const QJsonObject &request)
         resolveServer(id, params);
     } else if (method == "listServers") {
         listServers(id);
+    } else if (method == "listMcVersions") {
+        listMcVersions(id);
+    } else if (method == "listLoaderVersions") {
+        listLoaderVersions(id, params);
     } else if (method == "listInstalled") {
         listInstalled(id);
     } else if (method == "login") {
@@ -234,6 +238,50 @@ void Bridge::saveSettings(int id, const QJsonObject &params)
     }
     f.write(QJsonDocument(QJsonObject{{"ramGb", ram}}).toJson());
     replyOk(id, QJsonObject{{"ramGb", ram}});
+}
+
+// Liste les versions Minecraft (releases) depuis le manifeste Mojang.
+void Bridge::listMcVersions(int id)
+{
+    QNetworkRequest req{QUrl("https://launchermeta.mojang.com/mc/game/version_manifest_v2.json")};
+    req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+    QNetworkReply *reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, id, reply]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) { replyError(id, "Versions Minecraft inaccessibles."); return; }
+        QJsonArray out;
+        for (const QJsonValue &v : QJsonDocument::fromJson(reply->readAll()).object().value("versions").toArray()) {
+            const QJsonObject o = v.toObject();
+            if (o.value("type").toString() == "release")
+                out.append(o.value("id").toString());
+        }
+        replyOk(id, QJsonObject{{"versions", out}});
+    });
+}
+
+// Liste les versions du loader (Fabric/Quilt via leur meta ; sinon vide → manuel).
+void Bridge::listLoaderVersions(int id, const QJsonObject &params)
+{
+    const QString loader = params.value("loader").toString().trimmed().toLower();
+    QString url;
+    if (loader == "fabric") url = "https://meta.fabricmc.net/v2/versions/loader";
+    else if (loader == "quilt") url = "https://meta.quiltmc.org/v3/versions/loader";
+    else { replyOk(id, QJsonObject{{"versions", QJsonArray{}}}); return; }
+
+    QNetworkRequest req{QUrl(url)};
+    req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+    QNetworkReply *reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, id, reply]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) { replyOk(id, QJsonObject{{"versions", QJsonArray{}}}); return; }
+        QJsonArray out;
+        for (const QJsonValue &v : QJsonDocument::fromJson(reply->readAll()).array()) {
+            const QString ver = v.toObject().value("version").toString();
+            if (!ver.isEmpty())
+                out.append(ver);
+        }
+        replyOk(id, QJsonObject{{"versions", out}});
+    });
 }
 
 // Liste les serveurs réellement INSTALLÉS localement (dossier instances/<id>).

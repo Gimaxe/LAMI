@@ -39,6 +39,8 @@ signals:
 private:
     // Méthodes exposées à l'UI.
     void resolveServer(int id, const QJsonObject &params);
+    void listMcVersions(int id);
+    void listLoaderVersions(int id, const QJsonObject &params);
     void listServers(int id);
     void listInstalled(int id);
     void login(int id);

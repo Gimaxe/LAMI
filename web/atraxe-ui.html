@@ -497,51 +497,48 @@
                         </div>
                     </div>
 
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
                         <!-- Port du Serveur -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Port du serveur</label>
                             <input type="number" id="pub-port" value="25565" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
                         </div>
 
-                        <!-- Version de Minecraft (de 1.7 à la dernière) -->
+                        <!-- Version de Minecraft (liste Mojang + saisie manuelle) -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Version de Minecraft</label>
-                            <select id="pub-version" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition cursor-pointer">
-                                <option value="1.21">1.21 (Dernière version)</option>
-                                <option value="1.20.4">1.20.4</option>
-                                <option value="1.20.1" selected>1.20.1</option>
-                                <option value="1.19.4">1.19.4</option>
-                                <option value="1.18.2">1.18.2</option>
-                                <option value="1.16.5">1.16.5</option>
-                                <option value="1.12.2">1.12.2</option>
-                                <option value="1.9">1.9</option>
-                                <option value="1.8.9">1.8.9</option>
-                                <option value="1.7.10">1.7.10</option>
+                            <select id="pub-version" onchange="toggleManual('pub-version')" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition cursor-pointer">
+                                <option value="1.20.1">1.20.1</option>
                             </select>
+                            <input type="text" id="pub-version-manual" placeholder="ex : 1.20.6" class="hidden mt-1 bg-dark-input border border-neutral-800/80 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-brand">
                         </div>
 
-                        <!-- Loaders classés -->
+                        <!-- Type de Loader -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Type de Loader</label>
-                            <select id="pub-loader" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition cursor-pointer">
+                            <select id="pub-loader" onchange="onPubLoaderChange()" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition cursor-pointer">
                                 <option value="Vanilla">Vanilla (Aucun loader)</option>
                                 <optgroup label="📂 Mod Loaders">
                                     <option value="Forge">Forge</option>
-                                    <option value="Fabric">Fabric</option>
+                                    <option value="Fabric" selected>Fabric</option>
                                     <option value="NeoForge">NeoForge</option>
+                                    <option value="Quilt">Quilt</option>
                                 </optgroup>
                                 <optgroup label="🔌 Plugin Loaders">
                                     <option value="Paper">Paper</option>
                                     <option value="Spigot">Spigot</option>
                                     <option value="Purpur">Purpur</option>
                                 </optgroup>
-                                <optgroup label="⚙️ Hybrides (Plugins + Mods)">
-                                    <option value="Mohist">Mohist</option>
-                                    <option value="Arclight">Arclight</option>
-                                    <option value="Magma">Magma</option>
-                                </optgroup>
                             </select>
+                        </div>
+
+                        <!-- Version du Loader (liste + saisie manuelle) -->
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Version du Loader</label>
+                            <select id="pub-loader-version" onchange="toggleManual('pub-loader-version')" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition cursor-pointer">
+                                <option value="__latest__">Dernière (auto)</option>
+                            </select>
+                            <input type="text" id="pub-loader-version-manual" placeholder="ex : 0.15.11" class="hidden mt-1 bg-dark-input border border-neutral-800/80 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-brand">
                         </div>
                     </div>
 
@@ -1158,7 +1155,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.9.1";
+        const LAMI_VERSION = "0.10.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1202,6 +1199,7 @@
                 const slider = document.getElementById('setting-ram-slider');
                 if (slider && s.ramGb) { slider.value = s.ramGb; updateRamSliderValue(s.ramGb); }
             }).catch(function () {});
+            populatePublishVersions();   // remplit les listes de versions du formulaire
         }
 
         // --- CACHE DES SKINS (3 slots max) ---
@@ -2887,6 +2885,54 @@
         }
 
         // --- SIMULATION PUBLICATION DU SERVEUR ---
+        // Remplit un <select> avec des versions + option de saisie manuelle.
+        function fillVersionSelect(selectId, versions, opts) {
+            const sel = document.getElementById(selectId);
+            if (!sel) return;
+            const prev = sel.value;
+            sel.innerHTML = '';
+            if (opts && opts.latest) sel.add(new Option('Dernière (auto)', '__latest__'));
+            (versions || []).forEach(function (v) { sel.add(new Option(v, v)); });
+            sel.add(new Option('✏️ Saisir manuellement…', '__manual__'));
+            if (prev && Array.prototype.some.call(sel.options, function (o) { return o.value === prev; }))
+                sel.value = prev;
+        }
+        // Affiche/masque le champ manuel selon la sélection.
+        function toggleManual(baseId) {
+            const sel = document.getElementById(baseId);
+            const inp = document.getElementById(baseId + '-manual');
+            if (sel && inp) inp.classList.toggle('hidden', sel.value !== '__manual__');
+        }
+        // Valeur effective : manuel si "__manual__", vide si "__latest__", sinon la sélection.
+        function selectedVersion(baseId) {
+            const sel = document.getElementById(baseId);
+            const inp = document.getElementById(baseId + '-manual');
+            if (!sel) return '';
+            if (sel.value === '__manual__') return inp ? inp.value.trim() : '';
+            if (sel.value === '__latest__') return '';
+            return sel.value;
+        }
+        // Charge les versions du loader sélectionné dans le formulaire de publication.
+        function loadPubLoaderVersions() {
+            if (!window.lami || !window.lami.connected) return;
+            const loader = document.getElementById('pub-loader').value;
+            lami.call('listLoaderVersions', { loader: loader }).then(function (r) {
+                fillVersionSelect('pub-loader-version', r.versions || [], { latest: true });
+            }).catch(function () {});
+        }
+        function onPubLoaderChange() { loadPubLoaderVersions(); }
+        // Peuple les listes de versions du formulaire (à la connexion / ouverture).
+        function populatePublishVersions() {
+            if (!window.lami || !window.lami.connected) return;
+            lami.call('listMcVersions').then(function (r) {
+                fillVersionSelect('pub-version', r.versions || [], {});
+                const sel = document.getElementById('pub-version');
+                if (sel && Array.prototype.some.call(sel.options, function (o) { return o.value === '1.20.1'; }))
+                    sel.value = '1.20.1';
+            }).catch(function () {});
+            loadPubLoaderVersions();
+        }
+
         function handlePublishServer(e) {
             e.preventDefault();
 
@@ -2895,8 +2941,9 @@
             const srvName = document.getElementById('pub-name').value;
             const srvIp = document.getElementById('pub-ip').value;
             const srvPort = document.getElementById('pub-port').value;
-            const srvVersion = document.getElementById('pub-version').value;
+            const srvVersion = selectedVersion('pub-version');
             const srvLoader = document.getElementById('pub-loader').value;
+            const srvLoaderVersion = selectedVersion('pub-loader-version');
             const srvPassword = document.getElementById('pub-password').value;
 
             // Récupérer s'il y a des mods ou d'autres fichiers liés
@@ -2905,11 +2952,14 @@
             const tFile = document.getElementById('file-pub-packs').files[0];
             const sFile = document.getElementById('file-pub-shaders').files[0];
 
+            if (!srvVersion) { showToast("Choisis ou saisis une version de Minecraft.", "error"); return; }
+
             // Publication RÉELLE via le backend (les zips sont envoyés en octets).
             if (window.lami && window.lami.connected) {
                 publishServerReal({
                     name: srvName, ip: srvIp, port: srvPort,
-                    version: srvVersion, loader: srvLoader, password: srvPassword
+                    version: srvVersion, loader: srvLoader,
+                    loaderVersion: srvLoaderVersion, password: srvPassword
                 }, { mods: modsFile, plugins: pFile, packs: tFile, shaders: sFile });
                 return;
             }
@@ -3029,7 +3079,7 @@
                 status.innerText = 'Publication…';
                 return lami.call('publishServer', {
                     name: meta.name, ip: meta.ip, port: meta.port,
-                    version: meta.version, loader: meta.loader,
+                    version: meta.version, loader: meta.loader, loaderVersion: meta.loaderVersion || '',
                     modsZip: b64[0], pluginsZip: b64[1], packsZip: b64[2], shadersZip: b64[3]
                 });
             }).then(function () {
