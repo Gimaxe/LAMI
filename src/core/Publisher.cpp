@@ -3,8 +3,6 @@
 #include <QDir>
 #include <QFile>
 #include <QJsonDocument>
-
-#include <QDir>
 #include <QStandardPaths>
 
 #include "core/ModArchive.h"
@@ -27,110 +25,115 @@ Publisher::Publisher(GitHubClient *gh, QObject *parent)
                             .arg(roleToString(role)));
             return;
         }
-        emit progress(QStringLiteral("Rôle OK (%1). Upload des mods dans la banque…")
+        emit progress(QStringLiteral("Rôle OK (%1). Upload des fichiers dans la banque…")
                           .arg(roleToString(role)));
-        uploadNextMod();  // démarre l'upload de la banque (ou passe au manifeste)
+        uploadNext();
     });
 
-    // Chaque mod uploadé (ou sauté car déjà présent) → mod suivant.
+    // Chaque fichier uploadé (ou sauté car déjà présent) → suivant.
     connect(m_gh, &GitHubClient::uploadDone, this, [this](const QString &path, bool skipped) {
         if (skipped) ++m_skipped; else ++m_uploaded;
         emit progress(QStringLiteral("%1 %2").arg(skipped ? "déjà en banque" : "ajouté", path));
-        uploadNextMod();
+        uploadNext();
     });
 
-    // Manifeste écrit → on met à jour l'index adresse→id (si adresse fournie),
-    // sinon la publication est déjà terminée.
+    // Manifeste écrit → mise à jour de l'index adresse→id (si adresse), sinon fini.
     connect(m_gh, &GitHubClient::filePut, this, [this](const QString &) {
-        if (m_pending.address.isEmpty()) {
-            emit published(m_pending.id);
-            return;
-        }
+        if (m_pending.address.isEmpty()) { emit published(m_pending.id); return; }
         emit progress(QStringLiteral("Manifeste écrit. Enregistrement de l'adresse « %1 »…")
                           .arg(m_pending.address));
         m_gh->upsertAddressIndex(m_pending.address, m_pending.id,
                                  QStringLiteral("Index : %1 -> %2 via LAMI")
                                      .arg(m_pending.address, m_pending.id));
     });
-
-    // Index adresse→id à jour → publication terminée.
-    connect(m_gh, &GitHubClient::indexUpdated, this, [this]() {
-        emit published(m_pending.id);
-    });
+    connect(m_gh, &GitHubClient::indexUpdated, this, [this]() { emit published(m_pending.id); });
 
     connect(m_gh, &GitHubClient::writeError, this, &Publisher::failed);
     connect(m_gh, &GitHubClient::errorOccurred, this, &Publisher::failed);
 }
 
-void Publisher::publish(const ServerInfo &server, const QString &localModsDir,
+void Publisher::publish(ServerInfo server, const QHash<QString, QString> &localDirs,
                         const QString &publisherUuid)
 {
-    if (server.id.isEmpty()) {
-        emit failed("Serveur sans id : publication impossible.");
-        return;
-    }
-    m_pending      = server;
-    m_localModsDir = localModsDir;
-    m_uuid         = publisherUuid;
+    if (server.id.isEmpty()) { emit failed("Serveur sans id : publication impossible."); return; }
+
+    m_pending  = server;
+    m_uuid     = publisherUuid;
     m_uploaded = m_skipped = 0;
-    m_modQueue.clear();
-    for (const ModEntry &m : server.mods)
-        m_modQueue.enqueue(m);
+    m_uploadQueue.clear();
+
+    // Pour chaque catégorie : scanner le dossier → remplir la liste + file d'upload.
+    for (const char *type : {assets::Mods, assets::Plugins, assets::ResourcePacks, assets::Shaders}) {
+        if (!localDirs.contains(type))
+            continue;
+        const QString dir = localDirs.value(type);
+        const QVector<ModEntry> entries = scanFolder(dir);   // tous les fichiers
+        m_pending.assetList(type) = entries;
+        for (const ModEntry &e : entries)
+            m_uploadQueue.enqueue({QDir(dir).filePath(e.file), assetBankPath(m_pending, type, e)});
+    }
 
     // On (re)lit les rôles à la source avant toute écriture.
     m_gh->fetchRoles();
 }
 
+void Publisher::publishFromZips(ServerInfo server, const QHash<QString, QString> &zips,
+                                const QString &publisherUuid)
+{
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    QHash<QString, QString> dirs;
+
+    for (auto it = zips.begin(); it != zips.end(); ++it) {
+        const QString type = it.key();
+        const QString zip  = it.value();
+        if (zip.isEmpty())
+            continue;
+        const QString tmp = QDir(base).filePath("lami-pub-" + server.id + "-" + type);
+        QDir(tmp).removeRecursively();
+        QDir().mkpath(tmp);
+        QString err;
+        const QStringList files = ModArchive::extract(zip, tmp, QString(), &err);  // tous fichiers
+        if (files.isEmpty()) {
+            emit failed(err.isEmpty() ? QStringLiteral("Zip « %1 » vide/illisible.").arg(type) : err);
+            return;
+        }
+        emit progress(QStringLiteral("%1 : %2 fichier(s) extrait(s).").arg(type).arg(files.size()));
+        dirs.insert(type, tmp);
+    }
+
+    if (dirs.isEmpty()) { emit failed("Aucun fichier à publier."); return; }
+    publish(server, dirs, publisherUuid);
+}
+
 void Publisher::publishFromFolder(ServerInfo server, const QString &localModsDir,
                                   const QString &publisherUuid)
 {
-    server.mods = scanModsFolder(localModsDir);
-    emit progress(QStringLiteral("Dossier scanné : %1 mod(s) détecté(s).")
-                      .arg(server.mods.size()));
-    publish(server, localModsDir, publisherUuid);
+    publish(server, {{assets::Mods, localModsDir}}, publisherUuid);
 }
 
 void Publisher::publishFromZip(const ServerInfo &server, const QString &zipPath,
                                const QString &publisherUuid)
 {
-    // Dossier temporaire dédié à cette extraction.
-    const QString tmp = QDir(QStandardPaths::writableLocation(QStandardPaths::TempLocation))
-                            .filePath("lami-zip-" + server.id);
-    QDir(tmp).removeRecursively();
-    QDir().mkpath(tmp);
-
-    QString err;
-    const QStringList jars = ModArchive::extractJars(zipPath, tmp, &err);
-    if (jars.isEmpty()) {
-        emit failed(err.isEmpty()
-                        ? QStringLiteral("Aucun .jar trouvé dans le zip.")
-                        : err);
-        return;
-    }
-    emit progress(QStringLiteral("Zip extrait : %1 mod(s).").arg(jars.size()));
-    publishFromFolder(server, tmp, publisherUuid);
+    publishFromZips(server, {{assets::Mods, zipPath}}, publisherUuid);
 }
 
-void Publisher::uploadNextMod()
+void Publisher::uploadNext()
 {
-    if (m_modQueue.isEmpty()) {
-        emit progress(QStringLiteral("Banque : %1 ajouté(s), %2 mutualisé(s). "
-                                     "Écriture du manifeste…").arg(m_uploaded).arg(m_skipped));
+    if (m_uploadQueue.isEmpty()) {
+        emit progress(QStringLiteral("Banque : %1 ajouté(s), %2 mutualisé(s). Manifeste…")
+                          .arg(m_uploaded).arg(m_skipped));
         writeManifest();
         return;
     }
 
-    const ModEntry mod = m_modQueue.dequeue();
-    QFile f(QDir(m_localModsDir).filePath(mod.file));
+    const Upload up = m_uploadQueue.dequeue();
+    QFile f(up.localPath);
     if (!f.open(QIODevice::ReadOnly)) {
-        emit failed(QStringLiteral("Mod introuvable en local : %1").arg(mod.file));
+        emit failed(QStringLiteral("Fichier introuvable : %1").arg(up.localPath));
         return;
     }
-    const QByteArray content = f.readAll();
-
-    m_gh->uploadIfAbsent(modBankPath(m_pending, mod), content,
-                         QStringLiteral("Ajout du mod %1 (%2/%3) via LAMI")
-                             .arg(mod.file, m_pending.minecraftVersion, m_pending.loader));
+    m_gh->uploadIfAbsent(up.bankPath, f.readAll(),
+                         QStringLiteral("Ajout de %1 via LAMI").arg(up.bankPath));
 }
 
 void Publisher::writeManifest()

@@ -128,7 +128,7 @@ int main(int argc, char *argv[])
             check(true, "publication refusée pour UUID inconnu (Player)");
             out << "    (raison: " << reason << ")\n";
             out << "\n→ Publication réelle en tant que gimaxe (superadmin)…\n"; out.flush();
-            pub->publish(srv, modsDir, GIMAXE);
+            pub->publishFromFolder(srv, modsDir, GIMAXE);
         } else {
             check(false, "refus inattendu pour gimaxe"); finish();
         }
@@ -137,6 +137,6 @@ int main(int argc, char *argv[])
     QTimer::singleShot(40000, &app, [&]{ out << "\nTimeout.\n"; app.exit(3); });
 
     out << "Test 1 — publication avec un rôle insuffisant :\n"; out.flush();
-    pub->publish(srv, modsDir, UNKNOWN);
+    pub->publishFromFolder(srv, modsDir, UNKNOWN);
     return app.exec();
 }

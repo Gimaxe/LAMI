@@ -71,6 +71,8 @@ void Bridge::handle(const QJsonObject &request)
         listInstalled(id);
     } else if (method == "login") {
         login(id);
+    } else if (method == "devLogin") {
+        devLogin(id, params);
     } else if (method == "startDownload") {
         startDownload(id, params);
     } else if (method == "launch") {
@@ -314,6 +316,18 @@ void Bridge::resolveServer(int id, const QJsonObject &params)
     m_gh->fetchServerByAddress(ip);
 }
 
+// PROVISOIRE : établit une session côté backend SANS Microsoft (avant approbation
+// Azure), avec l'identité gimaxe (super admin dans roles.json) pour tester les
+// actions à privilèges (publier, admin). À RETIRER une fois le vrai login actif.
+void Bridge::devLogin(int id, const QJsonObject &params)
+{
+    m_session.uuid = params.value("uuid").toString("6ce55042-b808-45c4-999b-54c99cd96398");
+    m_session.name = params.value("name").toString("gimaxe");
+    m_session.minecraftToken = "0";
+    m_session.valid = true;
+    replyOk(id, QJsonObject{{"uuid", m_session.uuid}, {"name", m_session.name}});
+}
+
 void Bridge::startDownload(int id, const QJsonObject &params)
 {
     const QString serverId = params.value("id").toString();
@@ -517,22 +531,32 @@ void Bridge::publishServer(int id, const QJsonObject &params)
         cleanup();
     });
 
-    // Le zip de mods (octets base64) est fourni par le JS (webview : pas de chemin).
-    const QString b64 = params.value("modsZip").toString();
+    // Les 4 zips d'assets (octets base64) fournis par le JS (webview : pas de chemin).
+    // On écrit chacun dans un .zip temporaire ; les catégories vides sont ignorées.
     const QString tmpBase = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    if (!b64.isEmpty()) {
-        const QByteArray zip = QByteArray::fromBase64(b64.toUtf8());
-        const QString tmpZip = QDir(tmpBase).filePath("lami-pub-" + sid + ".zip");
+    QHash<QString, QString> zips;
+    const QHash<QString, QString> paramByType{
+        {assets::Mods, "modsZip"}, {assets::Plugins, "pluginsZip"},
+        {assets::ResourcePacks, "packsZip"}, {assets::Shaders, "shadersZip"}};
+    for (auto it = paramByType.begin(); it != paramByType.end(); ++it) {
+        const QString b64 = params.value(it.value()).toString();
+        if (b64.isEmpty())
+            continue;
+        const QString tmpZip = QDir(tmpBase).filePath("lami-pub-" + sid + "-" + it.key() + ".zip");
         QFile f(tmpZip);
         if (!f.open(QIODevice::WriteOnly)) { replyError(id, "Écriture temporaire impossible."); cleanup(); return; }
-        f.write(zip); f.close();
-        pub->publishFromZip(srv, tmpZip, m_session.uuid);
-    } else {
-        // Aucun mod fourni → on publie seulement le manifeste (dossier vide).
+        f.write(QByteArray::fromBase64(b64.toUtf8())); f.close();
+        zips.insert(it.key(), tmpZip);
+    }
+
+    if (zips.isEmpty()) {
+        // Aucun fichier → publier seulement le manifeste (dossier vide).
         const QString tmpDir = QDir(tmpBase).filePath("lami-pub-empty-" + sid);
         QDir(tmpDir).removeRecursively();
         QDir().mkpath(tmpDir);
         pub->publishFromFolder(srv, tmpDir, m_session.uuid);
+    } else {
+        pub->publishFromZips(srv, zips, m_session.uuid);
     }
 }
 

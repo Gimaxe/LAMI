@@ -9,9 +9,13 @@ namespace lami {
 // L'Hébergeur peut fournir un .zip de mods au lieu d'un dossier.
 namespace ModArchive {
 
-// Extrait tous les fichiers *.jar d'un ZIP vers `destDir` (noms aplatis :
-// on ne garde que le nom de fichier, l'arborescence interne est ignorée).
-// Retourne la liste des noms de fichiers extraits ; vide en cas d'échec.
+// Extrait les fichiers d'un ZIP vers `destDir` (noms aplatis : on ne garde que le
+// nom de fichier). `ext` filtre par extension (ex. ".jar") ou "" = tous les fichiers.
+// Retourne la liste des noms extraits ; vide en cas d'échec.
+QStringList extract(const QString &zipPath, const QString &destDir,
+                    const QString &ext, QString *error = nullptr);
+
+// Raccourci : uniquement les *.jar.
 QStringList extractJars(const QString &zipPath, const QString &destDir,
                         QString *error = nullptr);
 

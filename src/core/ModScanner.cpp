@@ -8,27 +8,31 @@
 
 namespace lami {
 
-QVector<ModEntry> scanModsFolder(const QString &dir)
+QVector<ModEntry> scanFolder(const QString &dir, const QStringList &filters)
 {
-    QVector<ModEntry> mods;
+    QVector<ModEntry> out;
 
     QDir d(dir);
-    const QStringList jars = d.entryList({"*.jar"}, QDir::Files, QDir::Name);
-    mods.reserve(jars.size());
+    const QStringList names = d.entryList(filters, QDir::Files, QDir::Name);
+    out.reserve(names.size());
 
-    for (const QString &name : jars) {
+    for (const QString &name : names) {
         const QString abs = d.filePath(name);
         ModEntry m;
         m.file   = name;
         m.sha256 = SyncManager::sha256File(abs);
         m.size   = QFileInfo(abs).size();
-        mods.push_back(m);
+        out.push_back(m);
     }
 
-    // Ordre stable (déjà trié par QDir::Name, mais on le garantit).
-    std::sort(mods.begin(), mods.end(),
+    std::sort(out.begin(), out.end(),
               [](const ModEntry &a, const ModEntry &b) { return a.file < b.file; });
-    return mods;
+    return out;
+}
+
+QVector<ModEntry> scanModsFolder(const QString &dir)
+{
+    return scanFolder(dir, {"*.jar"});
 }
 
 } // namespace lami

@@ -33,16 +33,18 @@ ServerInfo parseServer(const QJsonObject &obj, const QString &fallbackId)
         ? obj.value("loader_version").toString()
         : obj.value("loaderVersion").toString();
 
-    const QJsonArray mods = obj.value("mods").toArray();
-    s.mods.reserve(mods.size());
-    for (const QJsonValue &v : mods) {
-        const QJsonObject m = v.toObject();
-        ModEntry entry;
-        entry.file   = m.value("file").toString();
-        entry.sha256 = m.value("sha256").toString();
-        entry.size   = static_cast<qint64>(m.value("size").toDouble(0));
-        if (!entry.file.isEmpty())
-            s.mods.push_back(entry);
+    // Parse les 4 catégories d'assets.
+    for (const char *type : {assets::Mods, assets::Plugins, assets::ResourcePacks, assets::Shaders}) {
+        QVector<ModEntry> &list = s.assetList(type);
+        for (const QJsonValue &v : obj.value(type).toArray()) {
+            const QJsonObject m = v.toObject();
+            ModEntry entry;
+            entry.file   = m.value("file").toString();
+            entry.sha256 = m.value("sha256").toString();
+            entry.size   = static_cast<qint64>(m.value("size").toDouble(0));
+            if (!entry.file.isEmpty())
+                list.push_back(entry);
+        }
     }
 
     // Un serveur est valide s'il a au moins un id et une version.

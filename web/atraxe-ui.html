@@ -376,7 +376,7 @@
                             <div class="flex items-center justify-between pb-2 border-b border-neutral-800/50">
                                 <div class="flex items-center gap-2">
                                     <i data-lucide="package" class="w-4.5 h-4.5 text-brand"></i>
-                                    <h3 class="font-bold text-sm text-neutral-200">Mods Installés</h3>
+                                    <h3 class="font-bold text-sm text-neutral-200">Mods</h3>
                                 </div>
                                 <span class="text-[10px] font-bold text-neutral-500 uppercase tracking-widest bg-neutral-950 px-2 py-0.5 rounded" id="inst-srv-mods-count">0</span>
                             </div>
@@ -400,7 +400,7 @@
                             <div class="flex items-center justify-between pb-2 border-b border-neutral-800/50">
                                 <div class="flex items-center gap-2">
                                     <i data-lucide="plug" class="w-4.5 h-4.5 text-brand"></i>
-                                    <h3 class="font-bold text-sm text-neutral-200">Plugins Serveur</h3>
+                                    <h3 class="font-bold text-sm text-neutral-200">Plugins</h3>
                                 </div>
                                 <span class="text-[10px] font-bold text-neutral-500 uppercase tracking-widest bg-neutral-950 px-2 py-0.5 rounded" id="inst-srv-plugins-count">0</span>
                             </div>
@@ -448,7 +448,7 @@
                             <div class="flex items-center justify-between pb-2 border-b border-neutral-800/50">
                                 <div class="flex items-center gap-2">
                                     <i data-lucide="sun" class="w-4.5 h-4.5 text-brand"></i>
-                                    <h3 class="font-bold text-sm text-neutral-200">Shaders Graphiques</h3>
+                                    <h3 class="font-bold text-sm text-neutral-200">Shaders</h3>
                                 </div>
                                 <span class="text-[10px] font-bold text-neutral-500 uppercase tracking-widest bg-neutral-950 px-2 py-0.5 rounded" id="inst-srv-shaders-count">0</span>
                             </div>
@@ -1158,7 +1158,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.8.0";
+        const LAMI_VERSION = "0.9.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1653,6 +1653,13 @@
         // on SIMULE une connexion réussie. Une fois approuvée, remplacer le corps
         // de cette fonction par un vrai lami.call('login') (voir plus bas, commenté).
         function doMicrosoftLogin() {
+            // PROVISOIRE : établit la session côté backend (identité gimaxe / super
+            // admin) pour tester publication + admin avant l'approbation Azure.
+            if (window.lami && window.lami.connected) {
+                lami.call('devLogin', {}).then(function (s) {
+                    setDemoRole(s && s.name ? currentRole : currentRole);
+                }).catch(function () {});
+            }
             isMicrosoftAuthed = true;
             document.getElementById('player-name').innerText = "gimaxe";
             document.getElementById('player-avatar').src =
@@ -2898,12 +2905,12 @@
             const tFile = document.getElementById('file-pub-packs').files[0];
             const sFile = document.getElementById('file-pub-shaders').files[0];
 
-            // Publication RÉELLE via le backend (le zip de mods est envoyé en octets).
+            // Publication RÉELLE via le backend (les zips sont envoyés en octets).
             if (window.lami && window.lami.connected) {
                 publishServerReal({
                     name: srvName, ip: srvIp, port: srvPort,
                     version: srvVersion, loader: srvLoader, password: srvPassword
-                }, modsFile);
+                }, { mods: modsFile, plugins: pFile, packs: tFile, shaders: sFile });
                 return;
             }
 
@@ -2992,7 +2999,7 @@
         }
 
         // Publication réelle via le pont : envoie les métadonnées + le zip de mods.
-        function publishServerReal(meta, modsFile) {
+        function publishServerReal(meta, files) {
             isPublishing = true;
             const btnSubmit = document.getElementById('btn-submit-server');
             const wrapper = document.getElementById('publish-progress-wrapper');
@@ -3014,17 +3021,24 @@
                 bar.style.width = '0%'; percent.innerText = '0%';
             };
 
-            fileToBase64(modsFile).then(function (modsZip) {
+            // Lit les 4 catégories en base64 (celles fournies).
+            Promise.all([
+                fileToBase64(files.mods), fileToBase64(files.plugins),
+                fileToBase64(files.packs), fileToBase64(files.shaders)
+            ]).then(function (b64) {
                 status.innerText = 'Publication…';
                 return lami.call('publishServer', {
                     name: meta.name, ip: meta.ip, port: meta.port,
-                    version: meta.version, loader: meta.loader, modsZip: modsZip
+                    version: meta.version, loader: meta.loader,
+                    modsZip: b64[0], pluginsZip: b64[1], packsZip: b64[2], shadersZip: b64[3]
                 });
             }).then(function () {
                 bar.style.width = '100%'; percent.innerText = '100%';
                 showToast(`Serveur "${meta.name}" publié !`, 'success');
                 document.getElementById('form-publish-server').reset();
-                clearUploadedFile(null, 'file-pub-mods', 'label-pub-mods', 'Dossier des Mods (.zip, .7z)', 'btn-del-pub-mods', true);
+                ['mods', 'plugins', 'packs', 'shaders'].forEach(function (t) {
+                    clearUploadedFile(null, 'file-pub-' + t, 'label-pub-' + t, '', 'btn-del-pub-' + t, true);
+                });
                 refreshServersFromBackend();
                 finish();
             }).catch(function (err) {

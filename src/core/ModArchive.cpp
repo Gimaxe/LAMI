@@ -8,7 +8,8 @@
 namespace lami {
 namespace ModArchive {
 
-QStringList extractJars(const QString &zipPath, const QString &destDir, QString *error)
+QStringList extract(const QString &zipPath, const QString &destDir,
+                    const QString &ext, QString *error)
 {
     QStringList extracted;
     auto fail = [&](const QString &msg) -> QStringList {
@@ -31,10 +32,11 @@ QStringList extractJars(const QString &zipPath, const QString &destDir, QString 
         if (mz_zip_reader_is_file_a_directory(&zip, i))
             continue;
 
-        // On ne garde que les .jar, aplatis au nom de fichier.
-        const QString entry = QString::fromUtf8(st.m_filename);
-        const QString base  = QFileInfo(entry).fileName();
-        if (!base.endsWith(".jar", Qt::CaseInsensitive))
+        // Aplati au nom de fichier ; filtre par extension si demandé.
+        const QString base = QFileInfo(QString::fromUtf8(st.m_filename)).fileName();
+        if (base.isEmpty())
+            continue;
+        if (!ext.isEmpty() && !base.endsWith(ext, Qt::CaseInsensitive))
             continue;
 
         const QString dest = QDir(destDir).filePath(base);
@@ -47,6 +49,11 @@ QStringList extractJars(const QString &zipPath, const QString &destDir, QString 
 
     mz_zip_reader_end(&zip);
     return extracted;
+}
+
+QStringList extractJars(const QString &zipPath, const QString &destDir, QString *error)
+{
+    return extract(zipPath, destDir, ".jar", error);
 }
 
 } // namespace ModArchive

@@ -24,27 +24,45 @@ QString roleToString(Role role)
     return "player";
 }
 
-QString modLocalPath(const ModEntry &mod)
+const QVector<ModEntry> &ServerInfo::assetList(const QString &type) const
 {
-    return "mods/" + mod.file;
+    if (type == assets::Plugins)       return plugins;
+    if (type == assets::ResourcePacks) return resourcePacks;
+    if (type == assets::Shaders)       return shaders;
+    return mods;
+}
+QVector<ModEntry> &ServerInfo::assetList(const QString &type)
+{
+    if (type == assets::Plugins)       return plugins;
+    if (type == assets::ResourcePacks) return resourcePacks;
+    if (type == assets::Shaders)       return shaders;
+    return mods;
 }
 
-QString modBankPath(const ServerInfo &server, const ModEntry &mod)
+QString assetLocalPath(const QString &type, const ModEntry &e)
 {
-    return QStringLiteral("mods/%1/%2/%3")
-        .arg(server.minecraftVersion, server.loader, mod.file);
+    return type + "/" + e.file;   // mods/… plugins/… resourcepacks/… shaders/…
+}
+
+QString assetBankPath(const ServerInfo &server, const QString &type, const ModEntry &e)
+{
+    // Les mods dépendent du loader ; les autres seulement de la version.
+    if (type == assets::Mods)
+        return QStringLiteral("mods/%1/%2/%3").arg(server.minecraftVersion, server.loader, e.file);
+    return QStringLiteral("%1/%2/%3").arg(type, server.minecraftVersion, e.file);
+}
+
+static QJsonArray assetArray(const QVector<ModEntry> &list)
+{
+    QJsonArray a;
+    for (const ModEntry &m : list)
+        a.append(QJsonObject{{"file", m.file}, {"sha256", m.sha256},
+                             {"size", static_cast<double>(m.size)}});
+    return a;
 }
 
 QJsonObject serverToJson(const ServerInfo &s)
 {
-    QJsonArray mods;
-    for (const ModEntry &m : s.mods) {
-        mods.append(QJsonObject{
-            {"file", m.file},
-            {"sha256", m.sha256},
-            {"size", static_cast<double>(m.size)},
-        });
-    }
     return QJsonObject{
         {"id", s.id},
         {"name", s.name},
@@ -52,7 +70,10 @@ QJsonObject serverToJson(const ServerInfo &s)
         {"minecraft_version", s.minecraftVersion},
         {"loader", s.loader},
         {"loader_version", s.loaderVersion},
-        {"mods", mods},
+        {"mods", assetArray(s.mods)},
+        {"plugins", assetArray(s.plugins)},
+        {"resourcepacks", assetArray(s.resourcePacks)},
+        {"shaders", assetArray(s.shaders)},
     };
 }
 
