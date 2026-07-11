@@ -3,6 +3,8 @@
 #include <QDir>
 #include <QFile>
 #include <QCryptographicHash>
+#include <QRegularExpression>
+#include <algorithm>
 #include <QJsonArray>
 #include <QJsonDocument>
 #include <QNetworkAccessManager>
@@ -274,23 +276,61 @@ void Bridge::listMcVersions(int id)
 void Bridge::listLoaderVersions(int id, const QJsonObject &params)
 {
     const QString loader = params.value("loader").toString().trimmed().toLower();
+    const QString mc = params.value("mcVersion").toString().trimmed();
+
     QString url;
-    if (loader == "fabric") url = "https://meta.fabricmc.net/v2/versions/loader";
-    else if (loader == "quilt") url = "https://meta.quiltmc.org/v3/versions/loader";
+    bool xml = false;   // Forge/NeoForge = maven-metadata.xml ; Fabric/Quilt = JSON
+    if (loader == "fabric")        url = "https://meta.fabricmc.net/v2/versions/loader";
+    else if (loader == "quilt")    url = "https://meta.quiltmc.org/v3/versions/loader";
+    else if (loader == "forge")  { url = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml"; xml = true; }
+    else if (loader == "neoforge"){ url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"; xml = true; }
     else { replyOk(id, QJsonObject{{"versions", QJsonArray{}}}); return; }
 
     QNetworkRequest req{QUrl(url)};
     req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
     QNetworkReply *reply = m_net->get(req);
-    connect(reply, &QNetworkReply::finished, this, [this, id, reply]() {
+    connect(reply, &QNetworkReply::finished, this, [this, id, reply, loader, mc, xml]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) { replyOk(id, QJsonObject{{"versions", QJsonArray{}}}); return; }
+        const QByteArray body = reply->readAll();
         QJsonArray out;
-        for (const QJsonValue &v : QJsonDocument::fromJson(reply->readAll()).array()) {
-            const QString ver = v.toObject().value("version").toString();
-            if (!ver.isEmpty())
-                out.append(ver);
+
+        if (!xml) {
+            // Fabric / Quilt : JSON, versions déjà triées (dernière en premier).
+            for (const QJsonValue &v : QJsonDocument::fromJson(body).array()) {
+                const QString ver = v.toObject().value("version").toString();
+                if (!ver.isEmpty()) out.append(ver);
+            }
+            replyOk(id, QJsonObject{{"versions", out}});
+            return;
         }
+
+        // Forge / NeoForge : maven-metadata.xml, versions triées croissant.
+        const QString text = QString::fromUtf8(body);
+        QRegularExpression re("<version>([^<]+)</version>");
+        QStringList all;
+        auto it = re.globalMatch(text);
+        while (it.hasNext()) all << it.next().captured(1);
+
+        // Préfixe de filtrage selon la version Minecraft choisie.
+        QString prefix;      // Forge : "1.20.1-"   NeoForge : "21.1."
+        if (loader == "forge" && !mc.isEmpty()) {
+            prefix = mc + "-";
+        } else if (loader == "neoforge" && !mc.isEmpty()) {
+            const QStringList p = mc.split('.');
+            if (p.size() >= 2)
+                prefix = p.value(1) + "." + (p.size() >= 3 ? p.value(2) : QStringLiteral("0")) + ".";
+        }
+
+        QStringList kept;
+        for (const QString &v : all) {
+            if (!prefix.isEmpty() && !v.startsWith(prefix)) continue;
+            // Forge : on retire le préfixe "<mc>-" pour n'afficher que la version du loader.
+            kept << (loader == "forge" && !prefix.isEmpty() ? QString(v).mid(prefix.size()) : v);
+        }
+        // Dernière version en premier (le maven-metadata est croissant).
+        std::reverse(kept.begin(), kept.end());
+        for (const QString &v : kept) out.append(v);
         replyOk(id, QJsonObject{{"versions", out}});
     });
 }

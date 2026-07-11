@@ -507,7 +507,7 @@
                         <!-- Version de Minecraft (liste Mojang + saisie manuelle) -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Version de Minecraft</label>
-                            <input type="text" id="pub-version" list="pub-version-list" value="1.20.1" placeholder="ex : 1.20.1" autocomplete="off" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
+                            <input type="text" id="pub-version" list="pub-version-list" value="1.20.1" placeholder="ex : 1.20.1" autocomplete="off" onchange="loadPubLoaderVersions()" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
                             <datalist id="pub-version-list"></datalist>
                         </div>
 
@@ -554,9 +554,14 @@
                     </div>
 
                     <!-- Fichiers d'installation avec boutons d'annulation individuels -->
+                    <div class="flex flex-col gap-1 mb-1">
+                        <h3 class="text-sm font-black text-white">Contenu à synchroniser</h3>
+                        <p class="text-xs text-neutral-400">Déposez ici une archive .zip/.7z par catégorie. Chaque case correspond à un type de contenu précis — placez chaque fichier dans la bonne case.</p>
+                    </div>
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                         <!-- Drag & Drop : Mods -->
                         <div class="relative group">
+                            <p class="text-xs font-bold text-brand mb-1.5 flex items-center gap-1.5"><i data-lucide="package" class="w-3.5 h-3.5"></i>Mods — mods du jeu (Fabric/Forge…)</p>
                             <div class="border-2 border-dashed border-neutral-800 hover:border-brand/40 bg-neutral-950/20 hover:bg-neutral-950/40 rounded-xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center min-h-[110px]"
                                  onclick="triggerFileSelect('file-pub-mods')"
                                  ondragover="handleDragOver(event, this)"
@@ -573,6 +578,7 @@
 
                         <!-- Drag & Drop : Plugins -->
                         <div class="relative group">
+                            <p class="text-xs font-bold text-brand mb-1.5 flex items-center gap-1.5"><i data-lucide="plug" class="w-3.5 h-3.5"></i>Plugins — plugins serveur (Paper/Spigot…)</p>
                             <div class="border-2 border-dashed border-neutral-800 hover:border-brand/40 bg-neutral-950/20 hover:bg-neutral-950/40 rounded-xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center min-h-[110px]"
                                  onclick="triggerFileSelect('file-pub-plugins')"
                                  ondragover="handleDragOver(event, this)"
@@ -589,6 +595,7 @@
 
                         <!-- Drag & Drop : Texture Packs -->
                         <div class="relative group">
+                            <p class="text-xs font-bold text-brand mb-1.5 flex items-center gap-1.5"><i data-lucide="image" class="w-3.5 h-3.5"></i>Ressource Packs — packs de textures/ressources</p>
                             <div class="border-2 border-dashed border-neutral-800 hover:border-brand/40 bg-neutral-950/20 hover:bg-neutral-950/40 rounded-xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center min-h-[110px]"
                                  onclick="triggerFileSelect('file-pub-packs')"
                                  ondragover="handleDragOver(event, this)"
@@ -605,6 +612,7 @@
 
                         <!-- Drag & Drop : Shaders -->
                         <div class="relative group">
+                            <p class="text-xs font-bold text-brand mb-1.5 flex items-center gap-1.5"><i data-lucide="sun" class="w-3.5 h-3.5"></i>Shaders — shaders graphiques</p>
                             <div class="border-2 border-dashed border-neutral-800 hover:border-brand/40 bg-neutral-950/20 hover:bg-neutral-950/40 rounded-xl p-6 text-center transition cursor-pointer flex flex-col items-center justify-center min-h-[110px]"
                                  onclick="triggerFileSelect('file-pub-shaders')"
                                  ondragover="handleDragOver(event, this)"
@@ -1172,7 +1180,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.12.0";
+        const LAMI_VERSION = "0.13.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1436,7 +1444,8 @@
                         else showToast(`Installation terminée avec ${m.failed} échec(s).`, "error");
                     }
                     renderServersSidebar();
-                    if (srv) selectServer(srv);
+                    // On NE redirige PAS vers la page du serveur : l'utilisateur
+                    // reste où il est, l'installation s'est faite en arrière-plan.
                 });
             }
         }
@@ -2275,7 +2284,8 @@
                 plugins: s.plugins || [],
                 resourcePacks: s.resourcePacks || [],
                 shaders: s.shaders || [],
-                password: s.password || ''
+                password: s.password || '',
+                hasPassword: !!s.hasPassword   // serveur protégé (mdp demandé à l'install)
             };
         }
 
@@ -2975,7 +2985,8 @@
         function loadPubLoaderVersions() {
             if (!window.lami || !window.lami.connected) return;
             const loader = document.getElementById('pub-loader').value;
-            lami.call('listLoaderVersions', { loader: loader }).then(function (r) {
+            const mc = selectedVersion('pub-version');
+            lami.call('listLoaderVersions', { loader: loader, mcVersion: mc }).then(function (r) {
                 fillVersionSelect('pub-loader-version', r.versions || []);
             }).catch(function () {});
         }
