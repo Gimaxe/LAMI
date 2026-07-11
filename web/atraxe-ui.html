@@ -196,7 +196,7 @@
                 </div>
 
                 <!-- Version du launcher -->
-                <div class="bg-neutral-950/80 border border-neutral-800/60 text-neutral-400 text-xs font-mono px-3 py-2 rounded-xl">
+                <div class="app-version bg-neutral-950/80 border border-neutral-800/60 text-neutral-400 text-xs font-mono px-3 py-2 rounded-xl">
                     LAMI v0.1.0
                 </div>
             </div>
@@ -1134,10 +1134,14 @@
                 <span>Se connecter avec Microsoft</span>
             </button>
             <p class="text-[11px] text-neutral-600 text-center">Ton compte sert uniquement à lancer Minecraft avec ton profil.</p>
+            <span class="app-version text-[10px] text-neutral-700 font-mono">LAMI v0.1.0</span>
         </div>
     </div>
 
     <script>
+        // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
+        const LAMI_VERSION = "0.2.0";
+
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
         let isMicrosoftAuthed = false;   // démarre DÉCONNECTÉ (l'auth réelle se fait au clic)
@@ -1287,9 +1291,16 @@
 
         // --- CYCLE D'INITIALISATION ---
         window.onload = function () {
+            // EN PREMIER : écran de connexion si pas connecté (avant les inits
+            // qui pourraient échouer, pour qu'il s'affiche toujours).
+            document.querySelectorAll('.app-version').forEach(function (el) {
+                el.innerText = 'LAMI v' + LAMI_VERSION;
+            });
+            if (!isMicrosoftAuthed) showLoginModal();
+
             // Initialiser les icônes lucide
             lucide.createIcons();
-            
+
             // Charger la liste des serveurs dans la barre latérale
             renderServersSidebar();
 
@@ -1304,9 +1315,6 @@
 
             // Configurer le système Drag & Drop sur le visualiseur de skins
             setupDragAndDrop();
-
-            // Si pas connecté, on bloque l'app derrière l'écran de connexion.
-            if (!isMicrosoftAuthed) showLoginModal();
 
             // Charger les serveurs réels du repo dès que le backend est connecté
             // (et tout de suite s'il l'est déjà).
