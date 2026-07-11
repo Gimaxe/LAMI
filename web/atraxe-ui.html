@@ -1158,7 +1158,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.7.0";
+        const LAMI_VERSION = "0.8.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1369,6 +1369,8 @@
                 lami.on('downloadProgress', function (m) {
                     if (m.id === activeDownload.serverId) {
                         activeDownload.progress = m.percent;
+                        if (m.totalMb) activeDownload.statusText =
+                            Math.round(m.doneMb) + ' / ' + Math.round(m.totalMb) + ' Mo';
                         updateDownloadUI();
                     }
                 });
@@ -1385,8 +1387,11 @@
                 lami.on('launchProgress', function (m) {
                     const bar = document.getElementById('play-progress-dashboard-bar');
                     const pct = document.getElementById('play-progress-dashboard-percent');
+                    const st = document.getElementById('play-progress-dashboard-status');
                     if (bar) bar.style.width = m.percent + '%';
                     if (pct) pct.innerText = m.percent + '%';
+                    if (st && m.totalMb) st.innerText =
+                        'Téléchargement… ' + Math.round(m.doneMb) + ' / ' + Math.round(m.totalMb) + ' Mo';
                 });
                 lami.on('launched', function (m) {
                     showToast("Minecraft est lancé ! 🎮", "success");

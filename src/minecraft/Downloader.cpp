@@ -46,11 +46,15 @@ bool Downloader::alreadyValid(const DownloadTask &task)
 void Downloader::start(const QVector<DownloadTask> &tasks)
 {
     m_queue.clear();
-    for (const DownloadTask &t : tasks)
+    m_totalBytes = 0;
+    for (const DownloadTask &t : tasks) {
         m_queue.enqueue(t);
+        m_totalBytes += qMax<qint64>(0, t.size);
+    }
 
     m_total  = tasks.size();
     m_done   = m_ok = m_failed = m_active = 0;
+    m_doneBytes = 0;
 
     if (m_total == 0) {
         emit finished(0, 0);
@@ -66,7 +70,7 @@ void Downloader::pump()
 
         if (alreadyValid(task)) {
             // Déjà présent et conforme : compté comme succès sans réseau.
-            onOneDone(true, task.dest, {});
+            onOneDone(true, task.dest, {}, task.size);
             continue;
         }
         ++m_active;
@@ -89,7 +93,7 @@ void Downloader::startOne(const DownloadTask &task)
         --m_active;
 
         if (reply->error() != QNetworkReply::NoError) {
-            onOneDone(false, task.dest, reply->errorString());
+            onOneDone(false, task.dest, reply->errorString(), task.size);
             pump();
             return;
         }
@@ -99,7 +103,7 @@ void Downloader::startOne(const DownloadTask &task)
         QDir().mkpath(QFileInfo(task.dest).absolutePath());
         QFile out(task.dest);
         if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            onOneDone(false, task.dest, "écriture impossible");
+            onOneDone(false, task.dest, "écriture impossible", task.size);
             pump();
             return;
         }
@@ -112,20 +116,21 @@ void Downloader::startOne(const DownloadTask &task)
                 QCryptographicHash::hash(data, task.algo).toHex());
             if (got.compare(task.expectedHash, Qt::CaseInsensitive) != 0) {
                 QFile::remove(task.dest);  // ne pas garder un fichier corrompu
-                onOneDone(false, task.dest, "SHA1 non conforme");
+                onOneDone(false, task.dest, "SHA1 non conforme", task.size);
                 pump();
                 return;
             }
         }
 
-        onOneDone(true, task.dest, {});
+        onOneDone(true, task.dest, {}, task.size);
         pump();
     });
 }
 
-void Downloader::onOneDone(bool ok, const QString &dest, const QString &reason)
+void Downloader::onOneDone(bool ok, const QString &dest, const QString &reason, qint64 size)
 {
     ++m_done;
+    m_doneBytes += qMax<qint64>(0, size);
     if (ok) {
         ++m_ok;
     } else {
@@ -133,6 +138,7 @@ void Downloader::onOneDone(bool ok, const QString &dest, const QString &reason)
         emit fileFailed(dest, reason);
     }
     emit progress(m_done, m_total);
+    emit progressBytes(m_doneBytes, m_totalBytes);
 
     if (m_done == m_total)
         emit finished(m_ok, m_failed);

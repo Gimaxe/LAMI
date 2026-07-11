@@ -44,13 +44,14 @@ public:
 
 signals:
     void progress(int done, int total);
+    void progressBytes(qint64 doneBytes, qint64 totalBytes);
     void fileFailed(const QString &dest, const QString &reason);
     void finished(int ok, int failed);
 
 private:
     void pump();
     void startOne(const DownloadTask &task);
-    void onOneDone(bool ok, const QString &dest, const QString &reason);
+    void onOneDone(bool ok, const QString &dest, const QString &reason, qint64 size);
     static bool alreadyValid(const DownloadTask &task);
 
     QNetworkAccessManager *m_net;
@@ -60,6 +61,8 @@ private:
     int m_done   = 0;
     int m_ok     = 0;
     int m_failed = 0;
+    qint64 m_totalBytes = 0;
+    qint64 m_doneBytes  = 0;
     QQueue<DownloadTask> m_queue;
 };
 

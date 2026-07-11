@@ -341,10 +341,10 @@ void Bridge::startDownload(int id, const QJsonObject &params)
             [this, id, serverId, mgr](const LaunchPlan &plan) {
         auto *dl = new Downloader(6, this);
 
-        connect(dl, &Downloader::progress, this, [this, serverId](int done, int total) {
+        connect(dl, &Downloader::progressBytes, this, [this, serverId](qint64 done, qint64 total) {
             emit event(QJsonObject{{"event", "downloadProgress"}, {"id", serverId},
-                                   {"done", done}, {"total", total},
-                                   {"percent", total > 0 ? (done * 100 / total) : 0}});
+                                   {"doneMb", done / 1048576.0}, {"totalMb", total / 1048576.0},
+                                   {"percent", total > 0 ? int(done * 100 / total) : 0}});
         });
         connect(dl, &Downloader::finished, this,
                 [this, id, serverId, plan, mgr, dl](int ok, int failed) {
@@ -399,10 +399,10 @@ void Bridge::launch(int id, const QJsonObject &params)
     connect(mgr, &InstanceManager::planReady, this,
             [this, id, serverId, mgr, ramGb](const LaunchPlan &plan) {
         auto *dl = new Downloader(6, this);
-        connect(dl, &Downloader::progress, this, [this, serverId](int done, int total) {
+        connect(dl, &Downloader::progressBytes, this, [this, serverId](qint64 done, qint64 total) {
             emit event(QJsonObject{{"event", "launchProgress"}, {"id", serverId},
-                                   {"done", done}, {"total", total},
-                                   {"percent", total > 0 ? (done * 100 / total) : 0}});
+                                   {"doneMb", done / 1048576.0}, {"totalMb", total / 1048576.0},
+                                   {"percent", total > 0 ? int(done * 100 / total) : 0}});
         });
         connect(dl, &Downloader::finished, this,
                 [this, id, serverId, plan, mgr, dl, ramGb](int, int failed) {
