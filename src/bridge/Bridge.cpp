@@ -325,7 +325,23 @@ void Bridge::devLogin(int id, const QJsonObject &params)
     m_session.name = params.value("name").toString("gimaxe");
     m_session.minecraftToken = "0";
     m_session.valid = true;
-    replyOk(id, QJsonObject{{"uuid", m_session.uuid}, {"name", m_session.name}});
+
+    // Résout le rôle réel depuis roles.json pour le renvoyer à l'UI.
+    auto conns = std::make_shared<QVector<QMetaObject::Connection>>();
+    auto cleanup = [conns]() { for (const auto &c : *conns) QObject::disconnect(c); conns->clear(); };
+    *conns << connect(m_gh, &GitHubClient::rolesFetched, this,
+                      [this, id, cleanup](const RoleTable &roles) {
+        cleanup();
+        const Role r = RoleResolver::roleFor(m_session.uuid, roles);
+        replyOk(id, QJsonObject{{"uuid", m_session.uuid}, {"name", m_session.name},
+                                {"role", roleToString(r)}});
+    });
+    *conns << connect(m_gh, &GitHubClient::errorOccurred, this, [this, id, cleanup](const QString &) {
+        cleanup();
+        replyOk(id, QJsonObject{{"uuid", m_session.uuid}, {"name", m_session.name},
+                                {"role", "player"}});
+    });
+    m_gh->fetchRoles();
 }
 
 void Bridge::startDownload(int id, const QJsonObject &params)

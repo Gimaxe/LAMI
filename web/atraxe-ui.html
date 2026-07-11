@@ -1158,7 +1158,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.9.0";
+        const LAMI_VERSION = "0.9.1";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1657,7 +1657,7 @@
             // admin) pour tester publication + admin avant l'approbation Azure.
             if (window.lami && window.lami.connected) {
                 lami.call('devLogin', {}).then(function (s) {
-                    setDemoRole(s && s.name ? currentRole : currentRole);
+                    if (s && s.role) setDemoRole(s.role);   // rôle réel (admin/host/player)
                 }).catch(function () {});
             }
             isMicrosoftAuthed = true;
