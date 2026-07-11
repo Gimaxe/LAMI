@@ -92,3 +92,35 @@ jobs:
         with:
           name: LAMI-linux
           path: LAMI-linux.tar.gz
+
+  # -------------------------------------------- Release (distribution + màj auto)
+  release:
+    needs: [windows, linux]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Lire la version
+        id: ver
+        run: echo "version=$(grep -oP 'LAMI_VERSION = \"\K[0-9.]+' web/atraxe-ui.html)" >> "$GITHUB_OUTPUT"
+
+      - name: Récupérer les artéfacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Préparer les fichiers de release
+        run: |
+          cd artifacts/LAMI-windows && zip -r ../../LAMI-windows-v${{ steps.ver.outputs.version }}.zip . && cd ../..
+          cp artifacts/LAMI-linux/LAMI-linux.tar.gz LAMI-linux-v${{ steps.ver.outputs.version }}.tar.gz
+
+      - name: Créer / mettre à jour la Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: LAMI v${{ steps.ver.outputs.version }}
+          files: |
+            LAMI-windows-v*.zip
+            LAMI-linux-v*.tar.gz

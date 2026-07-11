@@ -1,9 +1,13 @@
 #pragma once
 
+#include <QHash>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
 #include <functional>
+
+class QProcess;
+class QNetworkAccessManager;
 
 #include "auth/MicrosoftAuth.h"  // MinecraftSession
 #include "github/Models.h"      // RoleTable
@@ -40,6 +44,9 @@ private:
     void login(int id);
     void startDownload(int id, const QJsonObject &params);
     void launch(int id, const QJsonObject &params);
+    void stopGame(int id, const QJsonObject &params);
+    void checkUpdate(int id, const QJsonObject &params);
+    void openUrl(int id, const QJsonObject &params);
     void uninstall(int id, const QJsonObject &params);
     void getSettings(int id);
     void saveSettings(int id, const QJsonObject &params);
@@ -56,8 +63,10 @@ private:
     void replyError(int id, const QString &message);
 
     GitHubClient    *m_gh;
+    QNetworkAccessManager *m_net;
     MicrosoftAuth   *m_auth = nullptr;
     MinecraftSession m_session;   // session authentifiée (source de vérité de l'UUID)
+    QHash<QString, QProcess *> m_running;   // jeux en cours, par id de serveur
 };
 
 // Sérialise un ServerInfo au format attendu par l'UI (mods/plugins/... + loader lisible).

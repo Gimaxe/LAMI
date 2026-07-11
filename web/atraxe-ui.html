@@ -1138,9 +1138,27 @@
         </div>
     </div>
 
+    <!-- MISE À JOUR OBLIGATOIRE (bloque l'app si une version plus récente existe) -->
+    <div id="update-modal" class="hidden fixed inset-0 z-[110] flex items-center justify-center bg-neutral-950/90 backdrop-blur-sm">
+        <div class="bg-dark-card border border-brand-500/30 rounded-3xl p-10 max-w-md w-full mx-4 flex flex-col items-center gap-5 shadow-2xl">
+            <div class="w-14 h-14 bg-brand/15 border border-brand/30 rounded-2xl flex items-center justify-center text-brand-500">
+                <i data-lucide="download-cloud" class="w-7 h-7"></i>
+            </div>
+            <div class="text-center">
+                <h2 class="text-xl font-black text-white">Mise à jour requise</h2>
+                <p class="text-sm text-neutral-400 mt-2">Une nouvelle version de LAMI est disponible. Mets à jour pour continuer.</p>
+                <p id="update-versions" class="text-xs text-neutral-500 mt-2 font-mono"></p>
+            </div>
+            <button onclick="downloadUpdate()" class="w-full py-3.5 px-4 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all">
+                <i data-lucide="download" class="w-4 h-4"></i>
+                <span>Télécharger la mise à jour</span>
+            </button>
+        </div>
+    </div>
+
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.5.0";
+        const LAMI_VERSION = "0.6.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1159,6 +1177,8 @@
             serverObj: null
         };
         let currentlySelectedServer = null;
+        let runningId = null;   // id du serveur dont le jeu tourne
+        let updateUrl = '';     // URL de la dernière release (si mise à jour dispo)
 
         // Catalogue = tous les serveurs du repo (pour la recherche). La barre latérale
         // « Mes Serveurs » n'affiche, elle, QUE les serveurs installés localement.
@@ -1325,8 +1345,10 @@
             document.addEventListener('lami-connected', function () {
                 showToast("Connecté au backend LAMI.", "success");
                 refreshServersFromBackend();
+                checkForUpdate();
             });
             refreshServersFromBackend();
+            checkForUpdate();
 
             // Affiche l'URL + le code Microsoft dès qu'ils arrivent (device code).
             if (window.lami) {
@@ -1366,8 +1388,19 @@
                     if (bar) bar.style.width = m.percent + '%';
                     if (pct) pct.innerText = m.percent + '%';
                 });
-                lami.on('launched', function () {
+                lami.on('launched', function (m) {
                     showToast("Minecraft est lancé ! 🎮", "success");
+                    runningId = m.id;
+                    // Le téléchargement est fini, le jeu tourne → bouton « Fermer ».
+                    const wrapper = document.getElementById('play-progress-dashboard-wrapper');
+                    if (wrapper) wrapper.classList.add('hidden');
+                    isPlaying = false;
+                    setPlayButtonStop();
+                });
+                lami.on('gameClosed', function (m) {
+                    if (m.id === runningId) runningId = null;
+                    showToast("Minecraft fermé.", "info");
+                    setPlayButtonPlay();
                 });
                 lami.on('downloadDone', function (m) {
                     if (m.id !== activeDownload.serverId) return;
@@ -1592,6 +1625,23 @@
         // --- SIMULATION AUTH MICROSOFT ---
         function showLoginModal() { document.getElementById('login-modal').classList.remove('hidden'); }
         function hideLoginModal() { document.getElementById('login-modal').classList.add('hidden'); }
+
+        // Vérifie s'il existe une version plus récente → modale bloquante.
+        function checkForUpdate() {
+            if (!window.lami || !window.lami.connected) return;
+            lami.call('checkUpdate', { version: LAMI_VERSION }).then(function (r) {
+                if (r && r.updateAvailable) {
+                    updateUrl = r.url || 'https://github.com/Gimaxe/LAMI/releases/latest';
+                    const vv = document.getElementById('update-versions');
+                    if (vv) vv.innerText = 'v' + (r.current || LAMI_VERSION) + '  →  v' + (r.latest || '?');
+                    document.getElementById('update-modal').classList.remove('hidden');
+                }
+            }).catch(function () {});
+        }
+        function downloadUpdate() {
+            if (window.lami && window.lami.connected && updateUrl)
+                lami.call('openUrl', { url: updateUrl }).catch(function () {});
+        }
 
         // Connexion Microsoft.
         // ⚠️ PROVISOIRE : tant que l'app Azure n'est pas approuvée par Microsoft,
@@ -2190,7 +2240,7 @@
                 version: s.version || '1.20.1',
                 loader: s.loader || 'Vanilla',
                 creator: s.creator || 'Inconnu',
-                installed: !!s.installed,
+                installed: installedIds.has(s.id) || !!s.installed,
                 mods: s.mods || [],
                 plugins: s.plugins || [],
                 resourcePacks: s.resourcePacks || [],
@@ -2623,6 +2673,32 @@
         }
 
         // --- SIMULATION DU LANCEMENT DU JEU ---
+        // Bascule le bouton en mode « Lancer le Jeu ».
+        function setPlayButtonPlay() {
+            const b = document.getElementById('btn-play-dashboard');
+            if (!b) return;
+            b.disabled = false;
+            b.classList.remove('opacity-50', 'cursor-not-allowed');
+            b.innerHTML = '<i data-lucide="play" class="w-5 h-5 fill-white"></i><span>Lancer le Jeu</span>';
+            b.onclick = simulateGameLaunch;
+            if (window.lucide) lucide.createIcons();
+        }
+        // Bascule le bouton en mode « Fermer Minecraft ».
+        function setPlayButtonStop() {
+            const b = document.getElementById('btn-play-dashboard');
+            if (!b) return;
+            b.disabled = false;
+            b.classList.remove('opacity-50', 'cursor-not-allowed');
+            b.innerHTML = '<i data-lucide="square" class="w-5 h-5"></i><span>Fermer Minecraft</span>';
+            b.onclick = stopRunningGame;
+            if (window.lucide) lucide.createIcons();
+        }
+        function stopRunningGame() {
+            if (window.lami && window.lami.connected && runningId) {
+                lami.call('stopGame', { id: runningId }).catch(function () {});
+            }
+        }
+
         // Réinitialise l'UI du bouton Jouer.
         function resetPlayUI() {
             isPlaying = false;
@@ -2656,8 +2732,8 @@
                 const pseudo = (document.getElementById('player-name').innerText || 'Player').trim();
                 const ramGb = parseInt(document.getElementById('setting-ram-slider').value, 10) || 6;
                 lami.call('launch', { id: srv.id, username: pseudo, ramGb: ramGb })
-                    .then(function () { showToast("Minecraft démarre !", "success"); resetPlayUI(); })
-                    .catch(function (err) { showToast("Lancement échoué : " + err.message, "error"); resetPlayUI(); });
+                    .then(function () { /* l'événement 'launched' gère l'UI (bouton Fermer) */ })
+                    .catch(function (err) { showToast("Lancement échoué : " + err.message, "error"); resetPlayUI(); setPlayButtonPlay(); });
                 return;
             }
 

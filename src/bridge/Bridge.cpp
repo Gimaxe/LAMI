@@ -4,6 +4,9 @@
 #include <QFile>
 #include <QJsonArray>
 #include <QJsonDocument>
+#include <QNetworkAccessManager>
+#include <QNetworkReply>
+#include <QNetworkRequest>
 #include <QProcess>
 #include <QStandardPaths>
 #include <memory>
@@ -48,6 +51,7 @@ QJsonObject serverToUiJson(const ServerInfo &s)
 Bridge::Bridge(QObject *parent)
     : QObject(parent)
     , m_gh(new GitHubClient(config::owner(), config::repo(), config::branch(), this))
+    , m_net(new QNetworkAccessManager(this))
 {
     if (!config::token().isEmpty())
         m_gh->setToken(config::token());
@@ -71,6 +75,12 @@ void Bridge::handle(const QJsonObject &request)
         startDownload(id, params);
     } else if (method == "launch") {
         launch(id, params);
+    } else if (method == "stopGame") {
+        stopGame(id, params);
+    } else if (method == "checkUpdate") {
+        checkUpdate(id, params);
+    } else if (method == "openUrl") {
+        openUrl(id, params);
     } else if (method == "uninstall") {
         uninstall(id, params);
     } else if (method == "getSettings") {
@@ -125,6 +135,75 @@ int readRamGb() {
     return qBound(2, ram, 32);
 }
 } // namespace
+
+// Ferme le jeu en cours pour ce serveur.
+void Bridge::stopGame(int id, const QJsonObject &params)
+{
+    const QString sid = params.value("id").toString();
+    QProcess *p = m_running.value(sid, nullptr);
+    if (!p) { replyError(id, "Aucun jeu en cours."); return; }
+    p->kill();
+    replyOk(id, QJsonObject{{"id", sid}, {"stopped", true}});
+}
+
+namespace {
+// Compare deux versions "x.y.z" : renvoie true si `latest` > `current`.
+bool isNewer(const QString &latest, const QString &current)
+{
+    const QStringList a = latest.split('.');
+    const QStringList b = current.split('.');
+    for (int i = 0; i < qMax(a.size(), b.size()); ++i) {
+        const int x = i < a.size() ? a[i].toInt() : 0;
+        const int y = i < b.size() ? b[i].toInt() : 0;
+        if (x != y) return x > y;
+    }
+    return false;
+}
+} // namespace
+
+// Vérifie s'il existe une version plus récente (dernière Release GitHub).
+void Bridge::checkUpdate(int id, const QJsonObject &params)
+{
+    const QString current = params.value("version").toString("0.0.0");
+
+    QNetworkRequest req{QUrl("https://api.github.com/repos/Gimaxe/LAMI/releases/latest")};
+    req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+    req.setRawHeader("Accept", "application/vnd.github+json");
+    QNetworkReply *reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, id, reply, current]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            // Pas de release / hors-ligne → on ne bloque pas l'app.
+            replyOk(id, QJsonObject{{"updateAvailable", false}});
+            return;
+        }
+        const QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
+        QString tag = o.value("tag_name").toString();
+        if (tag.startsWith('v')) tag.remove(0, 1);
+        const bool avail = !tag.isEmpty() && isNewer(tag, current);
+        replyOk(id, QJsonObject{
+            {"updateAvailable", avail},
+            {"latest", tag},
+            {"current", current},
+            {"url", o.value("html_url").toString("https://github.com/Gimaxe/LAMI/releases/latest")},
+        });
+    });
+}
+
+// Ouvre une URL dans le navigateur par défaut de l'OS.
+void Bridge::openUrl(int id, const QJsonObject &params)
+{
+    const QString url = params.value("url").toString();
+    if (url.isEmpty()) { replyError(id, "URL manquante."); return; }
+#if defined(Q_OS_WIN)
+    QProcess::startDetached("cmd", {"/c", "start", "", url});
+#elif defined(Q_OS_MACOS)
+    QProcess::startDetached("open", {url});
+#else
+    QProcess::startDetached("xdg-open", {url});
+#endif
+    replyOk(id, QJsonObject{{"opened", true}});
+}
 
 // Désinstalle un serveur : supprime son instance locale.
 void Bridge::uninstall(int id, const QJsonObject &params)
@@ -351,7 +430,8 @@ void Bridge::launch(int id, const QJsonObject &params)
 
             auto *proc = new QProcess(this);
             proc->setWorkingDirectory(plan.gameDir);
-            connect(proc, &QProcess::started, this, [this, id, serverId]() {
+            connect(proc, &QProcess::started, this, [this, id, serverId, proc]() {
+                m_running.insert(serverId, proc);   // suivi pour pouvoir le fermer
                 emit event(QJsonObject{{"event", "launched"}, {"id", serverId}});
                 replyOk(id, QJsonObject{{"id", serverId}, {"launched", true}});
             });
@@ -359,6 +439,13 @@ void Bridge::launch(int id, const QJsonObject &params)
                     [this, id, proc](QProcess::ProcessError) {
                 replyError(id, "Impossible de lancer Java : " + proc->errorString()
                                + " (Java 17 est-il installé ?)");
+            });
+            // À la fermeture du jeu → on prévient l'UI et on nettoie.
+            connect(proc, QOverload<int, QProcess::ExitStatus>::of(&QProcess::finished),
+                    this, [this, serverId, proc](int, QProcess::ExitStatus) {
+                m_running.remove(serverId);
+                emit event(QJsonObject{{"event", "gameClosed"}, {"id", serverId}});
+                proc->deleteLater();
             });
             proc->start(program, cmd);
         });
