@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Atraxe Launcher - LMAU</title>
+    <title>Atraxe Launcher - LAMI</title>
     <!-- Tailwind CSS (vendorisé, hors-ligne) -->
     <script src="vendor/tailwind.min.js"></script>
     <script>
@@ -71,14 +71,14 @@
         <!-- Section supérieure : Logo et Menu de Navigation (Fixe, ne défile pas) -->
         <div class="p-6 pb-2 flex flex-col gap-6 flex-shrink-0">
             
-            <!-- Logo LMAU -->
+            <!-- Logo LAMI -->
             <div class="flex items-center gap-3">
                 <div class="w-10 h-10 bg-gradient-to-br from-brand-600 to-brand-700 rounded-xl flex items-center justify-center shadow-lg shadow-brand-500/10">
                     <span class="text-white font-extrabold text-xl tracking-wider">A</span>
                 </div>
                 <div>
                     <h1 class="font-extrabold text-lg tracking-wider text-white">ATRAXE</h1>
-                    <span class="text-xs text-brand-500 font-semibold tracking-widest block -mt-1">LAUNCHER LMAU</span>
+                    <span class="text-xs text-brand-500 font-semibold tracking-widest block -mt-1">LAUNCHER LAMI</span>
                 </div>
             </div>
 
@@ -150,6 +150,7 @@
                         <div class="flex items-center gap-1.5">
                             <span id="player-name" class="font-bold text-sm text-neutral-100 truncate">Valkyrie_91</span>
                         </div>
+                        <span id="player-role" class="block text-[11px] font-semibold text-brand-500 mt-0.5">Joueur</span>
                     </div>
                 </div>
 
@@ -194,19 +195,9 @@
                     </button>
                 </div>
 
-                <!-- Version du launcher LMAU -->
+                <!-- Version du launcher -->
                 <div class="bg-neutral-950/80 border border-neutral-800/60 text-neutral-400 text-xs font-mono px-3 py-2 rounded-xl">
-                    LMAU v2.4.0
-                </div>
-
-                <!-- Sélecteur de démo de rôles (positionné maintenant dans le header) -->
-                <div class="bg-neutral-950/80 rounded-xl p-1.5 border border-neutral-800 flex items-center gap-2">
-                    <span class="text-[9px] font-bold text-neutral-400 uppercase tracking-widest pl-2">Mode Démo :</span>
-                    <div class="flex gap-1">
-                        <button onclick="setDemoRole('player')" class="role-selector-btn text-[10px] py-1 px-3 bg-brand text-white font-bold rounded-lg transition-all" id="demo-role-player">Joueur</button>
-                        <button onclick="setDemoRole('host')" class="role-selector-btn text-[10px] py-1 px-3 bg-neutral-800 text-neutral-400 hover:text-white rounded-lg transition-all" id="demo-role-host">Hébergeur</button>
-                        <button onclick="setDemoRole('admin')" class="role-selector-btn text-[10px] py-1 px-3 bg-neutral-800 text-neutral-400 hover:text-white rounded-lg transition-all" id="demo-role-admin">Admin</button>
-                    </div>
+                    LAMI v0.1.0
                 </div>
             </div>
         </header>
@@ -849,7 +840,7 @@
             <div id="tab-content-admin" class="tab-panel hidden flex-col gap-6 max-w-4xl mx-auto w-full">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
-                    <h2 class="text-xl font-black text-white">Administration du Launcher (LMAU)</h2>
+                    <h2 class="text-xl font-black text-white">Administration du Launcher (LAMI)</h2>
                 </div>
 
                 <!-- Gestion par UUID -->
@@ -1216,7 +1207,7 @@
             },
             {
                 id: 'creative',
-                name: 'Zone Créative LMAU',
+                name: 'Zone Créative LAMI',
                 ip: 'create.atraxe.net',
                 port: '25569',
                 version: '1.20.1',
@@ -1255,7 +1246,7 @@
                 port: '25567',
                 version: '1.20.1',
                 loader: 'Fabric (v0.15.3)',
-                creator: 'AdminLMAU',
+                creator: 'AdminLAMI',
                 installed: false,
                 mods: ['Sodium', 'Reese\'s Sodium Options'],
                 plugins: ['BentoBox', 'ASkyBlock', 'Vault'],
@@ -1488,28 +1479,22 @@
             }
         }
 
-        // --- CHANGEMENT DE RÔLE (DÉMO SIMULATION) ---
+        // Libellés français des rôles.
+        const ROLE_LABELS = { player: 'Joueur', host: 'Hébergeur', admin: 'Admin', superadmin: 'Admin' };
+
+        // Applique le rôle courant : visibilité des onglets + libellé sous le pseudo.
         function setDemoRole(role) {
+            if (role === 'superadmin') role = 'admin';
             currentRole = role;
 
-            // Visibilité des ongleets dans le menu
             const btnPublier = document.getElementById('btn-tab-publier');
             const btnMesPubs = document.getElementById('btn-tab-mes-publications');
             const btnAdmin = document.getElementById('btn-tab-admin');
-
-            // Style par défaut de tous les boutons de démo
-            document.querySelectorAll('.role-selector-btn').forEach(b => {
-                b.className = 'role-selector-btn text-[10px] py-1 px-3 bg-neutral-800 text-neutral-400 hover:text-white rounded-lg transition-all';
-            });
 
             if (role === 'player') {
                 btnPublier.classList.add('hidden');
                 btnMesPubs.classList.add('hidden');
                 btnAdmin.classList.add('hidden');
-                
-                document.getElementById('demo-role-player').className = 'role-selector-btn text-[10px] py-1 px-3 bg-brand text-white font-bold rounded-lg transition-all';
-                
-                // Si on était sur un onglet restreint, on retourne à rejoindre
                 if (currentTab === 'publier' || currentTab === 'mes-publications' || currentTab === 'admin' || currentTab === 'modifier') {
                     switchTab('rejoindre');
                 }
@@ -1517,9 +1502,6 @@
                 btnPublier.classList.remove('hidden');
                 btnMesPubs.classList.remove('hidden');
                 btnAdmin.classList.add('hidden');
-
-                document.getElementById('demo-role-host').className = 'role-selector-btn text-[10px] py-1 px-3 bg-brand text-white font-bold rounded-lg transition-all';
-
                 if (currentTab === 'admin' || currentTab === 'modifier') {
                     switchTab('rejoindre');
                 }
@@ -1527,9 +1509,11 @@
                 btnPublier.classList.remove('hidden');
                 btnMesPubs.classList.remove('hidden');
                 btnAdmin.classList.remove('hidden');
-
-                document.getElementById('demo-role-admin').className = 'role-selector-btn text-[10px] py-1 px-3 bg-brand text-white font-bold rounded-lg transition-all';
             }
+
+            // Affiche le rôle sous le pseudo.
+            const roleEl = document.getElementById('player-role');
+            if (roleEl) roleEl.innerText = ROLE_LABELS[role] || 'Joueur';
         }
 
         // --- SIMULATION AUTH MICROSOFT ---
