@@ -1058,23 +1058,25 @@
 
                         <div class="flex flex-col gap-4">
                             <div class="flex flex-col gap-1.5">
-                                <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Chemin d'installation du jeu (.atraxe/)</label>
+                                <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Chemin d'installation du jeu</label>
                                 <div class="flex gap-2">
-                                    <input type="text" id="setting-path-game" readonly value="C:\Users\Atraxe\AppData\Roaming\.atraxe" class="flex-1 bg-neutral-850 border border-neutral-800 rounded-xl px-4 py-3 text-xs text-neutral-400 outline-none">
-                                    <button onclick="simulateFileSelector('setting-path-game', 'C:\\AtraxeGame')" class="bg-neutral-800 hover:bg-neutral-700 border border-neutral-700/60 font-semibold px-4 rounded-xl text-xs transition-all text-neutral-200">
-                                        Changer...
+                                    <input type="text" id="setting-path-game" placeholder="Laisser vide = emplacement par défaut" class="flex-1 bg-dark-input hover:bg-neutral-800 transition border border-neutral-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-brand-500">
+                                    <button onclick="document.getElementById('setting-path-game').focus()" class="bg-neutral-800 hover:bg-neutral-700 border border-neutral-700/60 font-semibold px-4 rounded-xl text-xs transition-all text-neutral-200">
+                                        Modifier
                                     </button>
                                 </div>
+                                <span class="text-[10px] text-neutral-500">Dossier où le jeu, les mods et les instances sont installés. Vide = défaut.</span>
                             </div>
 
                             <div class="flex flex-col gap-1.5">
                                 <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Exécutable Java</label>
                                 <div class="flex gap-2">
-                                    <input type="text" id="setting-path-java" readonly value="C:\Program Files\Eclipse Adoptium\jdk-17.0.8\bin\java.exe" class="flex-1 bg-neutral-850 border border-neutral-800 rounded-xl px-4 py-3 text-xs text-neutral-400 outline-none">
-                                    <button onclick="simulateFileSelector('setting-path-java', 'C:\\Java\\java.exe')" class="bg-neutral-800 hover:bg-neutral-700 border border-neutral-700/60 font-semibold px-4 rounded-xl text-xs transition-all text-neutral-200">
-                                        Changer...
+                                    <input type="text" id="setting-path-java" placeholder="Laisser vide = Java 17 automatique" class="flex-1 bg-dark-input hover:bg-neutral-800 transition border border-neutral-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-brand-500">
+                                    <button onclick="document.getElementById('setting-path-java').focus()" class="bg-neutral-800 hover:bg-neutral-700 border border-neutral-700/60 font-semibold px-4 rounded-xl text-xs transition-all text-neutral-200">
+                                        Modifier
                                     </button>
                                 </div>
+                                <span class="text-[10px] text-neutral-500">Chemin d'un java.exe précis. Vide = le launcher télécharge et utilise le bon Java automatiquement.</span>
                             </div>
                         </div>
 
@@ -1097,7 +1099,7 @@
                         <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
                             <div class="flex flex-col gap-1.5">
                                 <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Arguments JVM personnalisés</label>
-                                <input type="text" id="setting-jvm" value="-XX:+UseG1GC -XX:+UnlockExperimentalVMOptions" class="bg-dark-input hover:bg-neutral-800 transition border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-brand-500">
+                                <input type="text" id="setting-jvm" placeholder="ex : -XX:+UseG1GC -XX:+UnlockExperimentalVMOptions" class="bg-dark-input hover:bg-neutral-800 transition border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-brand-500">
                             </div>
                             <div class="flex flex-col gap-1.5">
                                 <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Fermeture du Launcher</label>
@@ -1197,7 +1199,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.22.0";
+        const LAMI_VERSION = "0.23.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1246,6 +1248,11 @@
             lami.call('getSettings').then(function (s) {
                 const slider = document.getElementById('setting-ram-slider');
                 if (slider && s.ramGb) { slider.value = s.ramGb; updateRamSliderValue(s.ramGb); }
+                const g = document.getElementById('setting-path-game'); if (g) g.value = s.dataRoot || '';
+                const j = document.getElementById('setting-path-java'); if (j) j.value = s.javaPath || '';
+                const v = document.getElementById('setting-jvm');       if (v) v.value = s.jvmArgs || '';
+                const o = document.getElementById('setting-onlaunch');  if (o && s.closeBehavior) o.value = s.closeBehavior;
+                if (g && s.defaultDataRoot) g.placeholder = 'Défaut : ' + s.defaultDataRoot;
             }).catch(function () {});
             populatePublishVersions();   // remplit les listes de versions du formulaire
         }
@@ -3569,17 +3576,26 @@
         }
 
         function saveSettingSection(sectionName) {
+            let payload = {};
+            let okMsg = 'Réglages enregistrés.';
             if (sectionName === 'RAM') {
-                const ramVal = parseInt(document.getElementById('setting-ram-slider').value, 10);
-                if (window.lami && window.lami.connected) {
-                    lami.call('saveSettings', { ramGb: ramVal })
-                        .then(function () { showToast(`Allocation RAM enregistrée : ${ramVal} Go.`, "success"); })
-                        .catch(function (err) { showToast("Échec : " + err.message, "error"); });
-                } else {
-                    showToast(`Allocation RAM : ${ramVal} Go (démo).`, "success");
-                }
+                payload.ramGb = parseInt(document.getElementById('setting-ram-slider').value, 10);
+                okMsg = `Allocation RAM enregistrée : ${payload.ramGb} Go.`;
+            } else if (sectionName === 'Chemins') {
+                payload.dataRoot = document.getElementById('setting-path-game').value.trim();
+                payload.javaPath = document.getElementById('setting-path-java').value.trim();
+                okMsg = 'Chemins système enregistrés.';
+            } else if (sectionName === 'Paramètres') {
+                payload.jvmArgs = document.getElementById('setting-jvm').value;
+                payload.closeBehavior = document.getElementById('setting-onlaunch').value;
+                okMsg = 'Paramètres de jeu enregistrés.';
+            }
+            if (window.lami && window.lami.connected) {
+                lami.call('saveSettings', payload)
+                    .then(function () { showToast(okMsg, "success"); })
+                    .catch(function (err) { showToast("Échec : " + (err.message || err), "error"); });
             } else {
-                showToast(`Réglages de la section "${sectionName}" mis à jour !`, "success");
+                showToast(okMsg + ' (démo)', "success");
             }
         }
 

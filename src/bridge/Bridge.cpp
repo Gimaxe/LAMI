@@ -155,13 +155,9 @@ void Bridge::listServers(int id)
 }
 
 namespace {
-QString settingsPath() { return QDir(config::dataRoot()).filePath("settings.json"); }
+QString settingsPath() { return config::settingsFile(); }   // emplacement fixe
 int readRamGb() {
-    QFile f(settingsPath());
-    int ram = 6;
-    if (f.open(QIODevice::ReadOnly))
-        ram = QJsonDocument::fromJson(f.readAll()).object().value("ramGb").toInt(6);
-    return qBound(2, ram, 32);
+    return qBound(2, config::readSettings().value("ramGb").toInt(6), 32);
 }
 } // namespace
 
@@ -390,20 +386,40 @@ void Bridge::uninstall(int id, const QJsonObject &params)
 
 void Bridge::getSettings(int id)
 {
-    replyOk(id, QJsonObject{{"ramGb", readRamGb()}});
+    const QJsonObject s = config::readSettings();
+    replyOk(id, QJsonObject{
+        {"ramGb", readRamGb()},
+        {"dataRoot", s.value("dataRoot").toString()},
+        {"defaultDataRoot", config::defaultDataRoot()},
+        {"javaPath", s.value("javaPath").toString()},
+        {"jvmArgs", s.value("jvmArgs").toString()},
+        {"closeBehavior", s.value("closeBehavior").toString()},
+    });
 }
 
 void Bridge::saveSettings(int id, const QJsonObject &params)
 {
-    const int ram = qBound(2, params.value("ramGb").toInt(6), 32);
-    QDir().mkpath(config::dataRoot());
+    // Fusion : on repart des réglages existants et on met à jour les champs fournis.
+    QJsonObject s = config::readSettings();
+    if (params.contains("ramGb"))
+        s["ramGb"] = qBound(2, params.value("ramGb").toInt(6), 32);
+    if (params.contains("dataRoot"))
+        s["dataRoot"] = params.value("dataRoot").toString().trimmed();
+    if (params.contains("javaPath"))
+        s["javaPath"] = params.value("javaPath").toString().trimmed();
+    if (params.contains("jvmArgs"))
+        s["jvmArgs"] = params.value("jvmArgs").toString();
+    if (params.contains("closeBehavior"))
+        s["closeBehavior"] = params.value("closeBehavior").toString();
+
+    QDir().mkpath(config::defaultDataRoot());
     QFile f(settingsPath());
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
         replyError(id, "Écriture des réglages impossible.");
         return;
     }
-    f.write(QJsonDocument(QJsonObject{{"ramGb", ram}}).toJson());
-    replyOk(id, QJsonObject{{"ramGb", ram}});
+    f.write(QJsonDocument(s).toJson());
+    replyOk(id, s);
 }
 
 // Liste les versions Minecraft (releases) depuis le manifeste Mojang.
@@ -655,6 +671,7 @@ void Bridge::startDownload(int id, const QJsonObject &params)
     auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
                                     config::token(), config::dataRoot(), config::javaPath(), this);
     mgr->setPassword(params.value("password").toString());
+    mgr->setForceJava(config::forceCustomJava());
 
     // Session neutre : le téléchargement des fichiers ne dépend pas de l'identité
     // (seul le LANCEMENT a besoin du vrai token).
@@ -716,6 +733,7 @@ void Bridge::launch(int id, const QJsonObject &params)
     // Lancement d'un serveur déjà installé : pas de vérification de mot de passe
     // (il a été demandé une seule fois, au moment de l'installation).
     mgr->setVerifyPassword(false);
+    mgr->setForceJava(config::forceCustomJava());
 
     // Session : la vraie si connecté (Microsoft approuvé), sinon un profil
     // "hors-ligne" pour au moins démarrer le jeu (menu principal).
@@ -759,6 +777,15 @@ void Bridge::launch(int id, const QJsonObject &params)
             // Allocation mémoire (RAM des réglages) en tête des arguments JVM.
             cmd.prepend(QStringLiteral("-Xmx%1G").arg(ramGb));
             cmd.prepend(QStringLiteral("-Xms%1G").arg(qMax(1, ramGb / 2)));
+
+            // Arguments JVM personnalisés (réglages) : insérés en tête, avant la
+            // mainClass. On découpe la chaîne en respectant les guillemets.
+            const QString extra = config::jvmArgs().trimmed();
+            if (!extra.isEmpty()) {
+                const QStringList parts = QProcess::splitCommand(extra);
+                for (int i = parts.size() - 1; i >= 0; --i)
+                    cmd.prepend(parts.at(i));
+            }
 
             emit event(QJsonObject{{"event", "launchStatus"}, {"id", serverId},
                                    {"step", failed > 0

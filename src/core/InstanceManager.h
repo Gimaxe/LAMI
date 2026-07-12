@@ -61,6 +61,9 @@ public:
     // Le lancement d'un serveur DÉJÀ installé la désactive (mdp demandé à l'install).
     void setVerifyPassword(bool on) { m_verifyPassword = on; }
 
+    // Force l'utilisation du java fourni (javaPath) au lieu de provisionner un JRE.
+    void setForceJava(bool on) { m_forceJava = on; }
+
 signals:
     void progress(const QString &step);
     void planReady(const lami::LaunchPlan &plan);
@@ -93,6 +96,7 @@ private:
     QString m_resolvedJavaPath;   // JRE provisionné (sinon repli sur m_javaPath)
     QString m_password;           // mot de passe saisi par le joueur
     bool    m_verifyPassword = true;  // vérifier le mdp ? (false au lancement installé)
+    bool    m_forceJava = false;      // utiliser m_javaPath au lieu du JRE auto ?
     bool    m_forgeDone = false;  // profil Forge déjà fusionné ?
 
     QString m_token;

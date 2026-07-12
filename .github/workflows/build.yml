@@ -104,6 +104,8 @@ jobs:
           mkdir -p dist
           cp build/lami_backend build/lami_shell dist/
           cp -r web dist/web
+          cp installer/linux/install.sh dist/install.sh
+          chmod +x dist/install.sh
           tar czf LAMI-linux.tar.gz -C dist .
 
       - name: Publier l'artéfact Linux

@@ -205,6 +205,13 @@ void InstanceManager::onForgeResolved(const ForgeProfile &profile)
 
 void InstanceManager::provisionJavaThenAssets()
 {
+    // Java personnalisé forcé par l'utilisateur : on saute le provisionnement.
+    if (m_forceJava && !m_javaPath.isEmpty()) {
+        emit progress("Utilisation du java personnalisé : " + m_javaPath);
+        m_resolvedJavaPath = m_javaPath;
+        afterJavaReady();
+        return;
+    }
     emit progress("Vérification de Java…");
     m_java->provision(m_version.javaComponent.isEmpty()
                           ? QStringLiteral("jre-legacy") : m_version.javaComponent);

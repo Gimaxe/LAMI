@@ -344,6 +344,9 @@ elseif(WIN32)
     # par le paquet nuget Microsoft.Web.WebView2, dont le chemin est passé via
     # -DWEBVIEW2_DIR=... (voir le workflow CI).
     # Icône de l'exécutable : on génère un .rc avec le chemin absolu du .ico.
+    # Le langage RC doit être activé pour que CMake compile la ressource (sinon
+    # le .rc est ignoré silencieusement et l'.exe n'a pas d'icône).
+    enable_language(RC)
     set(LAMI_ICON_ICO "${CMAKE_SOURCE_DIR}/web/assets/lami-icon.ico")
     configure_file(src/shell/lami.rc.in ${CMAKE_BINARY_DIR}/lami.rc @ONLY)
 
