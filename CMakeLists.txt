@@ -205,6 +205,23 @@ if(LAMI_BUILD_TESTS)
     target_include_directories(lami_test_install_forge PRIVATE src)
     target_link_libraries(lami_test_install_forge PRIVATE Qt${QT_VERSION_MAJOR}::Network)
 
+    qt_add_executable(lami_test_launch_diag
+        tests/test_launch_diag.cpp
+        src/core/InstanceManager.cpp
+        src/minecraft/JavaProvisioner.cpp
+        src/minecraft/ForgeInstaller.cpp
+        src/github/Models.cpp
+        src/github/GitHubClient.cpp
+        src/sync/SyncManager.cpp
+        src/minecraft/VersionInfo.cpp
+        src/minecraft/MojangMeta.cpp
+        src/minecraft/Downloader.cpp
+        src/minecraft/LaunchBuilder.cpp
+        src/minecraft/FabricMeta.cpp
+    )
+    target_include_directories(lami_test_launch_diag PRIVATE src)
+    target_link_libraries(lami_test_launch_diag PRIVATE Qt${QT_VERSION_MAJOR}::Network)
+
     qt_add_executable(lami_test_fabric
         tests/test_fabric.cpp
         src/minecraft/VersionInfo.cpp

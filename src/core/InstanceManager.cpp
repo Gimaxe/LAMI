@@ -2,6 +2,7 @@
 
 #include <QCryptographicHash>
 #include <QDir>
+#include <QSet>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QNetworkAccessManager>
@@ -22,6 +23,37 @@ namespace lami {
 
 namespace {
 const char *kResourcesBase = "https://resources.download.minecraft.net/";
+
+// Clé d'artefact Maven (group:artifact[:classifier]) sans la version, pour
+// dédoublonner. "org.apache.commons:commons-lang3:3.13.0" -> "org.apache.commons:commons-lang3".
+QString artifactKey(const Library &lib)
+{
+    const QStringList p = lib.name.split(':');
+    if (p.size() < 2)
+        return lib.path.isEmpty() ? lib.name : lib.path;
+    QString key = p.value(0) + ":" + p.value(1);
+    if (p.size() >= 4)                 // classifier (ex. natives-linux)
+        key += ":" + p.value(3);
+    return key;
+}
+
+// Supprime les libs en double par artefact (garde la 1re occurrence). Les libs du
+// loader étant placées en tête, ce sont leurs versions qui priment sur vanilla.
+// Indispensable pour Forge/NeoForge : BootstrapLauncher plante sur un classpath
+// contenant deux fois le même jar (IllegalStateException: Duplicate key).
+void dedupeLibraries(QVector<Library> &libs)
+{
+    QVector<Library> out;
+    QSet<QString> seen;
+    for (const Library &lib : libs) {
+        const QString key = artifactKey(lib);
+        if (seen.contains(key))
+            continue;
+        seen.insert(key);
+        out << lib;
+    }
+    libs = out;
+}
 }
 
 InstanceManager::InstanceManager(QString owner, QString repo, QString branch,
@@ -158,10 +190,14 @@ void InstanceManager::onForgeResolved(const ForgeProfile &profile)
     m_version.libraries = profile.libraries + m_version.libraries;
     m_version.jvmArgs  += profile.jvmArgs;
     m_version.gameArgs += profile.gameArgs;
+    // Le loader et vanilla partagent des libs (commons-lang3, guava…) : sans
+    // dédoublonnage, BootstrapLauncher plante (Duplicate key). On garde la
+    // version du loader (placée en tête).
+    dedupeLibraries(m_version.libraries);
     m_forgeDone = true;
 
     emit progress(QString("Loader fusionné (%1 lib(s), mainClass %2).")
-                      .arg(profile.libraries.size())
+                      .arg(m_version.libraries.size())
                       .arg(profile.mainClass));
     fetchAssetIndex();
 }
@@ -182,9 +218,10 @@ void InstanceManager::onFabricResolved(const FabricProfile &profile)
     m_version.mainClass = profile.mainClass;
     m_version.libraries = profile.libraries + m_version.libraries;
     m_version.jvmArgs  += profile.jvmArgs;
+    dedupeLibraries(m_version.libraries);   // évite les doublons de classpath
 
     emit progress(QString("Fabric fusionné (%1 lib(s), mainClass %2).")
-                      .arg(profile.libraries.size())
+                      .arg(m_version.libraries.size())
                       .arg(profile.mainClass));
     provisionJavaThenAssets();
 }

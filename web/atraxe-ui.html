@@ -507,7 +507,7 @@
                         <!-- Version de Minecraft (liste Mojang + saisie manuelle) -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Version de Minecraft</label>
-                            <input type="text" id="pub-version" list="pub-version-list" value="1.20.1" placeholder="ex : 1.20.1" autocomplete="off" onchange="loadPubLoaderVersions()" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
+                            <input type="text" id="pub-version" list="pub-version-list" value="1.20.1" placeholder="ex : 1.20.1" autocomplete="off" onchange="refreshLoaderAvailability()" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
                             <datalist id="pub-version-list"></datalist>
                         </div>
 
@@ -1180,14 +1180,14 @@
             <p id="password-modal-error" class="hidden text-xs text-red-400 -mt-2"></p>
             <div class="flex gap-3">
                 <button onclick="closeServerPassword()" class="flex-1 py-3 px-4 bg-neutral-800 hover:bg-neutral-700 text-white font-bold rounded-xl transition-all">Annuler</button>
-                <button onclick="submitServerPassword()" class="flex-1 py-3 px-4 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl transition-all">Installer</button>
+                <button id="password-modal-submit" onclick="submitServerPassword()" class="flex-1 py-3 px-4 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl transition-all">Installer</button>
             </div>
         </div>
     </div>
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.16.0";
+        const LAMI_VERSION = "0.17.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1207,6 +1207,7 @@
             password: ''
         };
         let pendingPasswordCb = null;   // callback quand le mot de passe est validé
+        let pendingPasswordServer = null;
         let serverPasswords = {};       // id serveur -> mot de passe (mémorisé pour la session)
         let currentlySelectedServer = null;
         let runningId = null;   // id du serveur dont le jeu tourne
@@ -1561,6 +1562,7 @@
                         <div class="min-w-0 flex-1">
                             <span class="block text-xs font-bold text-neutral-200 truncate group-hover:text-white transition-all">${srv.name}</span>
                             <span class="block text-[10px] text-neutral-500 font-mono truncate">${srv.ip}</span>
+                            <span class="block text-[10px] text-brand-500/90 font-semibold truncate mt-0.5">${srv.version || '?'}${srv.loader && srv.loader.toLowerCase() !== 'vanilla' ? ' · ' + srv.loader : ' · Vanilla'}</span>
                         </div>
                     </div>
                     <div class="flex-shrink-0 ml-2">
@@ -2469,6 +2471,7 @@
         // Ouvre la modale de mot de passe ; cb(pwd) est appelé si l'utilisateur valide.
         function promptServerPassword(srv, cb) {
             pendingPasswordCb = cb;
+            pendingPasswordServer = srv;
             const modal = document.getElementById('password-modal');
             const input = document.getElementById('password-modal-input');
             const sub = document.getElementById('password-modal-sub');
@@ -2487,15 +2490,36 @@
         }
         function submitServerPassword() {
             const input = document.getElementById('password-modal-input');
+            const btn = document.getElementById('password-modal-submit');
+            const err = document.getElementById('password-modal-error');
             const pwd = input ? input.value : '';
             if (!pwd) {
-                const err = document.getElementById('password-modal-error');
                 if (err) { err.innerText = 'Mot de passe requis.'; err.classList.remove('hidden'); }
                 return;
             }
-            const cb = pendingPasswordCb;
-            closeServerPassword();
-            if (cb) cb(pwd);
+            const srv = pendingPasswordServer;
+            if (!srv || !window.lami || !window.lami.connected) {
+                // Pas de backend : on ne peut pas vérifier, on laisse passer.
+                const cb = pendingPasswordCb; closeServerPassword(); if (cb) cb(pwd); return;
+            }
+            // Vérifie le mot de passe AVANT de fermer la popup (sans rien télécharger).
+            if (err) err.classList.add('hidden');
+            if (btn) { btn.disabled = true; btn.classList.add('opacity-50', 'cursor-not-allowed'); }
+            lami.call('checkPassword', { id: srv.id, password: pwd }).then(function (r) {
+                if (btn) { btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed'); }
+                if (r && r.ok) {
+                    const cb = pendingPasswordCb;
+                    closeServerPassword();
+                    if (cb) cb(pwd);
+                } else {
+                    // Incorrect : on RESTE sur la popup et on affiche l'erreur.
+                    if (err) { err.innerText = 'Mot de passe incorrect.'; err.classList.remove('hidden'); }
+                    if (input) { input.value = ''; input.focus(); }
+                }
+            }).catch(function (e) {
+                if (btn) { btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed'); }
+                if (err) { err.innerText = 'Vérification impossible : ' + (e.message || e); err.classList.remove('hidden'); }
+            });
         }
 
         function startDownload(serverId, password) {
@@ -3015,6 +3039,30 @@
             }).catch(function () {});
         }
         function onPubLoaderChange() { loadPubLoaderVersions(); }
+
+        // Masque, dans la liste des loaders, ceux qui n'ont AUCUNE version compatible
+        // avec la version Minecraft choisie (ex. NeoForge n'existe pas pour 1.20.1).
+        function refreshLoaderAvailability() {
+            const sel = document.getElementById('pub-loader');
+            const mc = selectedVersion('pub-version');
+            if (!sel || !mc || !window.lami || !window.lami.connected) { loadPubLoaderVersions(); return; }
+            const modLoaders = ['Forge', 'Fabric', 'NeoForge', 'Quilt'];
+            Promise.all(modLoaders.map(function (l) {
+                return lami.call('listLoaderVersions', { loader: l, mcVersion: mc })
+                    .then(function (r) { return { loader: l, ok: (r.versions || []).length > 0 }; })
+                    .catch(function () { return { loader: l, ok: false }; });
+            })).then(function (results) {
+                results.forEach(function (res) {
+                    const opt = Array.prototype.find.call(sel.options, function (o) { return o.value === res.loader; });
+                    if (opt) { opt.hidden = !res.ok; opt.disabled = !res.ok; }
+                });
+                // Si le loader actuellement choisi n'est plus dispo → retour à Vanilla.
+                const cur = Array.prototype.find.call(sel.options, function (o) { return o.value === sel.value; });
+                if (cur && cur.hidden) sel.value = 'Vanilla';
+                loadPubLoaderVersions();
+            });
+        }
+
         // Peuple les listes de versions du formulaire (à la connexion / ouverture).
         function populatePublishVersions() {
             if (!window.lami || !window.lami.connected) return;
@@ -3022,8 +3070,8 @@
                 fillVersionSelect('pub-version', r.versions || []);
                 const inp = document.getElementById('pub-version');
                 if (inp && !inp.value.trim()) inp.value = '1.20.1';
+                refreshLoaderAvailability();
             }).catch(function () {});
-            loadPubLoaderVersions();
         }
 
         function handlePublishServer(e) {

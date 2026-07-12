@@ -92,6 +92,8 @@ void Bridge::handle(const QJsonObject &request)
         login(id);
     } else if (method == "devLogin") {
         devLogin(id, params);
+    } else if (method == "checkPassword") {
+        checkPassword(id, params);
     } else if (method == "startDownload") {
         startDownload(id, params);
     } else if (method == "launch") {
@@ -542,6 +544,42 @@ void Bridge::login(int id)
     });
 
     m_auth->start();
+}
+
+// Vérifie un mot de passe SANS rien télécharger : récupère le manifeste du
+// serveur et compare le hash. Permet à l'UI de garder la popup ouverte tant
+// que le mot de passe est incorrect.
+void Bridge::checkPassword(int id, const QJsonObject &params)
+{
+    const QString serverId = params.value("id").toString().trimmed();
+    const QString pwd = params.value("password").toString();
+    if (serverId.isEmpty()) { replyError(id, "Identifiant de serveur manquant."); return; }
+
+    auto *gh = new GitHubClient(config::owner(), config::repo(), config::branch(), this);
+    if (!config::token().isEmpty())
+        gh->setToken(config::token());
+
+    auto conns = std::make_shared<QVector<QMetaObject::Connection>>();
+    auto cleanup = [conns, gh]() {
+        for (const auto &c : *conns) QObject::disconnect(c);
+        conns->clear();
+        gh->deleteLater();
+    };
+
+    *conns << connect(gh, &GitHubClient::serverFetched, this,
+                      [this, id, pwd, cleanup](const ServerInfo &s) {
+        const bool ok = s.passwordHash.isEmpty()
+                        || sha256Hex(pwd) == s.passwordHash;
+        cleanup();
+        replyOk(id, QJsonObject{{"ok", ok}});
+    });
+    *conns << connect(gh, &GitHubClient::errorOccurred, this,
+                      [this, id, cleanup](const QString &e) {
+        cleanup();
+        replyError(id, e);
+    });
+
+    gh->fetchServer(serverId);
 }
 
 void Bridge::resolveServer(int id, const QJsonObject &params)
