@@ -57,11 +57,30 @@ jobs:
           Copy-Item -Recurse web dist/web
           windeployqt --release --no-translations --no-system-d3d-compiler dist/lami_backend.exe
 
-      - name: Publier l'artéfact Windows
+      - name: Publier l'artéfact Windows (portable)
         uses: actions/upload-artifact@v4
         with:
           name: LAMI-windows
           path: dist
+
+      - name: Lire la version
+        id: ver
+        shell: bash
+        run: echo "version=$(grep -oP 'LAMI_VERSION = \"\K[0-9.]+' web/atraxe-ui.html)" >> "$GITHUB_OUTPUT"
+
+      - name: Installer Inno Setup
+        run: choco install innosetup -y --no-progress
+
+      - name: Construire l'installeur
+        shell: pwsh
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DMyAppVersion=${{ steps.ver.outputs.version }} installer\lami.iss
+
+      - name: Publier l'installeur Windows
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAMI-windows-setup
+          path: installer-out/*.exe
 
   # ------------------------------------------------------------------ Linux (bonus)
   linux:
@@ -115,6 +134,7 @@ jobs:
         run: |
           cd artifacts/LAMI-windows && zip -r ../../LAMI-windows-v${{ steps.ver.outputs.version }}.zip . && cd ../..
           cp artifacts/LAMI-linux/LAMI-linux.tar.gz LAMI-linux-v${{ steps.ver.outputs.version }}.tar.gz
+          cp artifacts/LAMI-windows-setup/*.exe . || true
 
       - name: Créer / mettre à jour la Release
         uses: softprops/action-gh-release@v2
@@ -122,5 +142,6 @@ jobs:
           tag_name: v${{ steps.ver.outputs.version }}
           name: LAMI v${{ steps.ver.outputs.version }}
           files: |
+            LAMI-Setup-v*.exe
             LAMI-windows-v*.zip
             LAMI-linux-v*.tar.gz

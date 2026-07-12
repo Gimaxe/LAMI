@@ -111,9 +111,21 @@ int main()
     w.set_size(1180, 760, WEBVIEW_HINT_NONE);
     w.set_size(900, 600, WEBVIEW_HINT_MIN);
 
-    // Icône de la fenêtre. Sur Windows, l'icône embarquée (.rc → .ico) suffit
-    // pour la barre des tâches ; sur Linux on la charge à l'exécution depuis le PNG.
-#ifndef _WIN32
+    // Icône de la fenêtre.
+#ifdef _WIN32
+    // La ressource .rc donne l'icône de l'.exe (Explorateur), mais la FENÊTRE
+    // WebView2 ne l'hérite pas : on la pose explicitement (barre des tâches + titre).
+    if (HWND hwnd = static_cast<HWND>(w.window())) {
+        HICON hIcon = static_cast<HICON>(LoadImageW(
+            GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1), IMAGE_ICON, 0, 0,
+            LR_DEFAULTSIZE | LR_SHARED));
+        if (hIcon) {
+            SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(hIcon));
+            SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(hIcon));
+        }
+    }
+#else
+    // Linux : chargement direct du PNG dans la GtkWindow.
     if (GtkWidget *win = static_cast<GtkWidget *>(w.window()))
         gtk_window_set_icon_from_file(GTK_WINDOW(win),
                                       (dir + "/web/assets/lami-icon.png").c_str(), nullptr);
