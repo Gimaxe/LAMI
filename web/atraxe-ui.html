@@ -547,7 +547,7 @@
                         <!-- Version de Minecraft (liste Mojang + saisie manuelle) -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Version de Minecraft</label>
-                            <input type="text" id="pub-version" list="pub-version-list" value="1.20.1" placeholder="ex : 1.20.1" autocomplete="off" onchange="refreshLoaderAvailability()" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
+                            <input type="text" id="pub-version" list="pub-version-list" placeholder="ex : 1.21.1" autocomplete="off" onchange="refreshLoaderAvailability()" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
                             <datalist id="pub-version-list"></datalist>
                         </div>
 
@@ -1172,6 +1172,29 @@
                         </div>
                     </div>
 
+                    <!-- Section : Accès GitHub (jeton pour lire/publier sur le repo privé) -->
+                    <div class="bg-neutral-950/40 border border-neutral-800/60 rounded-2xl p-6 flex flex-col gap-4">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-brand/10 text-brand-500 flex items-center justify-center">
+                                <i data-lucide="key-round" class="w-4.5 h-4.5"></i>
+                            </div>
+                            <h3 class="font-bold text-sm text-neutral-200">Accès GitHub</h3>
+                        </div>
+                        <div class="flex flex-col gap-1.5">
+                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Jeton d'accès (fine-grained PAT)</label>
+                            <div class="flex gap-2">
+                                <input type="password" id="setting-token" placeholder="github_pat_… (laisser vide = inchangé)" autocomplete="off" class="flex-1 bg-dark-input border border-neutral-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-brand">
+                                <button onclick="clearToken()" class="bg-neutral-800 hover:bg-red-950/40 hover:text-red-400 border border-neutral-700/60 font-semibold px-4 rounded-xl text-xs transition-all text-neutral-200">Retirer</button>
+                            </div>
+                            <span id="token-status" class="text-[10px] text-neutral-500">Nécessaire pour rechercher/installer des serveurs et publier (repo privé). Stocké en local, jamais partagé.</span>
+                        </div>
+                        <div class="flex justify-end pt-1">
+                            <button onclick="saveSettingSection('Accès')" class="px-5 py-2.5 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl text-xs transition-all shadow-md">
+                                Enregistrer le jeton
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
 
             </div>
@@ -1253,7 +1276,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.28.0";
+        const LAMI_VERSION = "0.29.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1310,6 +1333,7 @@
                 setAccent(s.accentColor && isValidHex(s.accentColor) ? s.accentColor : '#06b6d4', true);
                 currentBg = s.bgImage || '';
                 applyBackground(currentBg);
+                updateTokenStatus(!!s.hasToken);
             }).catch(function () {});
             loadBackgrounds();   // remplit les vignettes de fond
             populatePublishVersions();   // remplit les listes de versions du formulaire
@@ -3143,8 +3167,6 @@
             if (!window.lami || !window.lami.connected) return;
             lami.call('listMcVersions').then(function (r) {
                 fillVersionSelect('pub-version', r.versions || []);
-                const inp = document.getElementById('pub-version');
-                if (inp && !inp.value.trim()) inp.value = '1.20.1';
                 refreshLoaderAvailability();
             }).catch(function () {});
         }
@@ -3742,6 +3764,22 @@
                 .catch(function () { renderBackgrounds([]); });
         }
 
+        function updateTokenStatus(has) {
+            const el = document.getElementById('token-status');
+            if (!el) return;
+            if (has) { el.innerText = '✅ Un jeton est configuré. Stocké en local, jamais partagé.'; el.className = 'text-[10px] text-emerald-400'; }
+            else { el.innerText = 'Aucun jeton configuré. Nécessaire pour rechercher/installer et publier (repo privé). Stocké en local.'; el.className = 'text-[10px] text-neutral-500'; }
+        }
+        function clearToken() {
+            if (!window.lami || !window.lami.connected) return;
+            if (!confirm('Retirer le jeton GitHub enregistré ?')) return;
+            lami.call('setToken', { token: '' }).then(function () {
+                document.getElementById('setting-token').value = '';
+                updateTokenStatus(false);
+                showToast('Jeton retiré.', 'info');
+            }).catch(function () {});
+        }
+
         function saveSettingSection(sectionName) {
             let payload = {};
             let okMsg = 'Réglages enregistrés.';
@@ -3760,6 +3798,19 @@
                 payload.accentColor = currentAccent;
                 payload.bgImage = currentBg;
                 okMsg = 'Apparence enregistrée.';
+            } else if (sectionName === 'Accès') {
+                // Jeton : méthode dédiée (stocké à part, pas dans settings.json).
+                const tok = document.getElementById('setting-token').value.trim();
+                if (!tok) { showToast('Saisis un jeton (ou utilise « Retirer »).', 'error'); return; }
+                if (window.lami && window.lami.connected) {
+                    lami.call('setToken', { token: tok }).then(function () {
+                        document.getElementById('setting-token').value = '';
+                        updateTokenStatus(true);
+                        showToast('Jeton enregistré. Tu peux maintenant publier/installer.', 'success');
+                        refreshServersFromBackend();
+                    }).catch(function (err) { showToast('Échec : ' + (err.message || err), 'error'); });
+                }
+                return;
             }
             if (window.lami && window.lami.connected) {
                 lami.call('saveSettings', payload)

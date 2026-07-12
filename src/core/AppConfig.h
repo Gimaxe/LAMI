@@ -31,8 +31,8 @@ inline QString readSecret(const QString &name)
     return readFileTrimmed(QDir::homePath() + "/LAMI/" + name);
 }
 
-// Secrets locaux (jamais committés) : voir DESKTOP.md.
-inline QString token()    { return readSecret(".token"); }
+// client_id Azure (non secret). Le jeton GitHub (token()) est défini plus bas
+// car il consulte aussi le dossier de données.
 inline QString clientId() { return readSecret(".client_id"); }
 
 // Coordonnées du repo-BDD.
@@ -57,6 +57,19 @@ inline QJsonObject readSettings()
     if (!f.open(QIODevice::ReadOnly))
         return {};
     return QJsonDocument::fromJson(f.readAll()).object();
+}
+
+// Chemin du jeton dans le dossier de données (persiste entre réinstallations,
+// car séparé du dossier d'installation de l'app).
+inline QString tokenFile() { return QDir(defaultDataRoot()).filePath(".token"); }
+
+// Jeton GitHub (fine-grained PAT). Ordre : à côté de l'exe, puis ~/LAMI, puis le
+// dossier de données (défini via l'UI). Jamais committé ni journalisé.
+inline QString token()
+{
+    const QString t = readSecret(".token");
+    if (!t.isEmpty()) return t;
+    return readFileTrimmed(tokenFile());
 }
 
 // Emplacements locaux (surchargeables via les réglages).

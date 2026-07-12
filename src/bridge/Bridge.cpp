@@ -114,6 +114,8 @@ void Bridge::handle(const QJsonObject &request)
         getSettings(id);
     } else if (method == "saveSettings") {
         saveSettings(id, params);
+    } else if (method == "setToken") {
+        setToken(id, params);
     } else if (method == "editServer") {
         editServer(id, params);
     } else if (method == "deleteServer") {
@@ -398,7 +400,33 @@ void Bridge::getSettings(int id)
         {"closeBehavior", s.value("closeBehavior").toString()},
         {"accentColor", s.value("accentColor").toString()},
         {"bgImage", s.value("bgImage").toString()},
+        {"hasToken", !config::token().isEmpty()},
     });
+}
+
+// Enregistre le jeton GitHub dans le dossier de données (persiste entre
+// réinstallations). Nécessaire pour lire/écrire le repo-BDD privé.
+void Bridge::setToken(int id, const QJsonObject &params)
+{
+    const QString tok = params.value("token").toString().trimmed();
+    QDir().mkpath(config::defaultDataRoot());
+    QFile f(config::tokenFile());
+    if (tok.isEmpty()) {
+        f.remove();   // vider = supprimer le jeton
+        m_gh->setToken(QString());
+        replyOk(id, QJsonObject{{"hasToken", false}});
+        return;
+    }
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+        replyError(id, "Écriture du jeton impossible.");
+        return;
+    }
+    f.write(tok.toUtf8());
+    f.close();
+    f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);  // 600
+    // Applique immédiatement au client GitHub persistant.
+    m_gh->setToken(tok);
+    replyOk(id, QJsonObject{{"hasToken", true}});
 }
 
 // Liste les images de fond disponibles (web/assets/backgrounds à côté de l'exe).
