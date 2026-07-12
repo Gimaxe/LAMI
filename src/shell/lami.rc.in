@@ -1,0 +1,3 @@
+// Ressource Windows : icône de l'exécutable (barre des tâches / Explorateur).
+// Le chemin absolu vers le .ico est injecté par CMake (configure_file).
+1 ICON "@LAMI_ICON_ICO@"

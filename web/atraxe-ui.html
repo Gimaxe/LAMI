@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Atraxe Launcher - LAMI</title>
+    <title>LAMI</title>
     <!-- Tailwind CSS (vendorisé, hors-ligne) -->
     <script src="vendor/tailwind.min.js"></script>
     <script>
@@ -73,12 +73,12 @@
             
             <!-- Logo LAMI -->
             <div class="flex items-center gap-3">
-                <div class="w-10 h-10 bg-gradient-to-br from-brand-600 to-brand-700 rounded-xl flex items-center justify-center shadow-lg shadow-brand-500/10">
-                    <span class="text-white font-extrabold text-xl tracking-wider">A</span>
+                <div class="w-10 h-10 rounded-xl overflow-hidden flex items-center justify-center bg-gradient-to-br from-brand-600 to-brand-700 shadow-lg shadow-brand-500/10">
+                    <img src="assets/lami-icon.png" alt="LAMI" class="w-full h-full object-cover"
+                         onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<span class=\'text-white font-extrabold text-xl tracking-wider\'>L</span>')">
                 </div>
                 <div>
-                    <h1 class="font-extrabold text-lg tracking-wider text-white">ATRAXE</h1>
-                    <span class="text-xs text-brand-500 font-semibold tracking-widest block -mt-1">LAUNCHER LAMI</span>
+                    <h1 class="font-extrabold text-lg tracking-widest text-white">LAMI</h1>
                 </div>
             </div>
 
@@ -1127,8 +1127,9 @@
     <!-- ÉCRAN DE CONNEXION (bloque l'app tant qu'on n'est pas connecté) -->
     <div id="login-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
         <div class="bg-dark-card border border-neutral-800 rounded-3xl p-10 max-w-md w-full mx-4 flex flex-col items-center gap-6 shadow-2xl">
-            <div class="w-16 h-16 bg-gradient-to-br from-brand-600 to-brand-700 rounded-2xl flex items-center justify-center shadow-lg shadow-brand-500/20">
-                <span class="text-white font-extrabold text-3xl tracking-wider">A</span>
+            <div class="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center bg-gradient-to-br from-brand-600 to-brand-700 shadow-lg shadow-brand-500/20">
+                <img src="assets/lami-icon.png" alt="LAMI" class="w-full h-full object-cover"
+                     onerror="this.style.display='none';this.insertAdjacentHTML('afterend','<span class=\'text-white font-extrabold text-3xl tracking-wider\'>L</span>')">
             </div>
             <div class="text-center">
                 <h2 class="text-2xl font-black text-white">Bienvenue sur LAMI</h2>
@@ -1196,7 +1197,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.20.0";
+        const LAMI_VERSION = "0.21.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';

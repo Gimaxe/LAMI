@@ -12,6 +12,7 @@
 #include <climits>
 #include <csignal>
 #include <unistd.h>
+#include <gtk/gtk.h>   // icône de fenêtre (GtkWindow)
 #endif
 
 namespace {
@@ -106,9 +107,18 @@ int main()
     startBackend(dir);
 
     webview::webview w(/*debug=*/false, nullptr);
-    w.set_title("LAMI — Launcher Atraxe MInecraft");
+    w.set_title("LAMI");
     w.set_size(1180, 760, WEBVIEW_HINT_NONE);
     w.set_size(900, 600, WEBVIEW_HINT_MIN);
+
+    // Icône de la fenêtre. Sur Windows, l'icône embarquée (.rc → .ico) suffit
+    // pour la barre des tâches ; sur Linux on la charge à l'exécution depuis le PNG.
+#ifndef _WIN32
+    if (GtkWidget *win = static_cast<GtkWidget *>(w.window()))
+        gtk_window_set_icon_from_file(GTK_WINDOW(win),
+                                      (dir + "/web/assets/lami-icon.png").c_str(), nullptr);
+#endif
+
     w.init("window.LAMI_WS_PORT = " + std::to_string(kWsPort) + ";");
     w.navigate(uiUrl(dir));
     w.run();

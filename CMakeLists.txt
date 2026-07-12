@@ -343,7 +343,11 @@ elseif(WIN32)
     # Windows : la webview utilise WebView2 (Edge/Chromium). Le SDK est fourni
     # par le paquet nuget Microsoft.Web.WebView2, dont le chemin est passé via
     # -DWEBVIEW2_DIR=... (voir le workflow CI).
-    add_executable(lami_shell WIN32 src/shell/shell_main.cpp)
+    # Icône de l'exécutable : on génère un .rc avec le chemin absolu du .ico.
+    set(LAMI_ICON_ICO "${CMAKE_SOURCE_DIR}/web/assets/lami-icon.ico")
+    configure_file(src/shell/lami.rc.in ${CMAKE_BINARY_DIR}/lami.rc @ONLY)
+
+    add_executable(lami_shell WIN32 src/shell/shell_main.cpp ${CMAKE_BINARY_DIR}/lami.rc)
     # Sous-système GUI (pas de console) mais point d'entrée main() standard.
     if(MSVC)
         target_link_options(lami_shell PRIVATE /ENTRY:mainCRTStartup)
