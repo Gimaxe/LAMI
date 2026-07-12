@@ -112,6 +112,10 @@ void Bridge::handle(const QJsonObject &request)
         getSettings(id);
     } else if (method == "saveSettings") {
         saveSettings(id, params);
+    } else if (method == "editServer") {
+        editServer(id, params);
+    } else if (method == "deleteServer") {
+        deleteServer(id, params);
     } else if (method == "publishServer") {
         publishServer(id, params);
     } else if (method == "listRoles") {
@@ -708,7 +712,9 @@ void Bridge::launch(int id, const QJsonObject &params)
 
     auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
                                     config::token(), config::dataRoot(), config::javaPath(), this);
-    mgr->setPassword(params.value("password").toString());
+    // Lancement d'un serveur déjà installé : pas de vérification de mot de passe
+    // (il a été demandé une seule fois, au moment de l'installation).
+    mgr->setVerifyPassword(false);
 
     // Session : la vraie si connecté (Microsoft approuvé), sinon un profil
     // "hors-ligne" pour au moins démarrer le jeu (menu principal).
@@ -876,6 +882,109 @@ void Bridge::publishServer(int id, const QJsonObject &params)
     } else {
         pub->publishFromZips(srv, zips, m_session.uuid);
     }
+}
+
+// Modifie les métadonnées d'un serveur (nom, adresse, version, loader, mot de
+// passe) SANS toucher aux mods/plugins/etc déjà publiés (ils sont préservés).
+void Bridge::editServer(int id, const QJsonObject &params)
+{
+    if (!m_session.valid) {
+        replyError(id, "Connecte-toi avec Microsoft avant de modifier.");
+        return;
+    }
+    const QString serverId = params.value("id").toString().trimmed();
+    if (serverId.isEmpty()) { replyError(id, "Identifiant de serveur manquant."); return; }
+
+    auto *gh = new GitHubClient(config::owner(), config::repo(), config::branch(), this);
+    if (!config::token().isEmpty())
+        gh->setToken(config::token());
+
+    auto conns = std::make_shared<QVector<QMetaObject::Connection>>();
+    auto cleanup = [conns, gh]() {
+        for (const auto &c : *conns) QObject::disconnect(c);
+        conns->clear();
+        gh->deleteLater();
+    };
+
+    // 1) Lit le manifeste actuel (pour préserver les assets), 2) applique les
+    // champs fournis, 3) réécrit, 4) met à jour l'index d'adresse.
+    *conns << connect(gh, &GitHubClient::serverFetched, this,
+                      [this, id, gh, params, serverId, cleanup, conns](const ServerInfo &cur) {
+        ServerInfo s = cur;   // conserve mods/plugins/resourcepacks/shaders
+        auto strOf = [&params](const char *k) { return params.value(k).toString().trimmed(); };
+        if (!strOf("name").isEmpty())    s.name = strOf("name");
+        if (!strOf("ip").isEmpty())      s.address = strOf("ip");
+        if (!strOf("version").isEmpty()) s.minecraftVersion = strOf("version");
+        if (!strOf("loader").isEmpty())  s.loader = strOf("loader").toLower();
+        if (params.contains("loaderVersion")) s.loaderVersion = params.value("loaderVersion").toString();
+        // Mot de passe : modifié seulement si le champ a été touché (passwordChanged).
+        if (params.value("passwordChanged").toBool()) {
+            const QString pwd = params.value("password").toString();
+            s.passwordHash = pwd.isEmpty() ? QString() : sha256Hex(pwd);
+        }
+
+        // Après écriture du manifeste → index (ou réponse directe si pas d'adresse).
+        *conns << connect(gh, &GitHubClient::filePut, this,
+                          [this, id, gh, s, serverId, cleanup](const QString &) {
+            if (s.address.isEmpty()) { cleanup(); replyOk(id, QJsonObject{{"id", serverId}, {"edited", true}}); return; }
+            gh->upsertAddressIndex(s.address, s.id, "Maj adresse " + s.id + " via LAMI");
+        });
+        *conns << connect(gh, &GitHubClient::indexUpdated, this,
+                          [this, id, serverId, cleanup]() {
+            cleanup();
+            replyOk(id, QJsonObject{{"id", serverId}, {"edited", true}});
+        });
+        gh->putFile("servers/" + s.id + ".json",
+                    QJsonDocument(serverToJson(s)).toJson(QJsonDocument::Indented),
+                    "Modification du serveur " + s.id + " via LAMI");
+    });
+    *conns << connect(gh, &GitHubClient::writeError, this,
+                      [this, id, cleanup](const QString &e) { cleanup(); replyError(id, e); });
+    *conns << connect(gh, &GitHubClient::errorOccurred, this,
+                      [this, id, cleanup](const QString &e) { cleanup(); replyError(id, e); });
+
+    gh->fetchServer(serverId);
+}
+
+// Supprime complètement un serveur publié : son manifeste servers/<id>.json puis
+// ses entrées dans servers/index.json. Nécessite une session authentifiée.
+void Bridge::deleteServer(int id, const QJsonObject &params)
+{
+    if (!m_session.valid) {
+        replyError(id, "Connecte-toi avec Microsoft avant de supprimer.");
+        return;
+    }
+    const QString serverId = params.value("id").toString().trimmed();
+    if (serverId.isEmpty()) { replyError(id, "Identifiant de serveur manquant."); return; }
+
+    auto *gh = new GitHubClient(config::owner(), config::repo(), config::branch(), this);
+    if (!config::token().isEmpty())
+        gh->setToken(config::token());
+
+    auto conns = std::make_shared<QVector<QMetaObject::Connection>>();
+    auto cleanup = [conns, gh]() {
+        for (const auto &c : *conns) QObject::disconnect(c);
+        conns->clear();
+        gh->deleteLater();
+    };
+
+    // 1) manifeste supprimé → 2) nettoyage de l'index → 3) réponse.
+    *conns << connect(gh, &GitHubClient::fileDeleted, this, [gh](const QString &) {
+        gh->removeFromIndex(gh->property("_delId").toString(),
+                            "Suppression du serveur via LAMI");
+    });
+    *conns << connect(gh, &GitHubClient::indexUpdated, this,
+                      [this, id, serverId, cleanup]() {
+        cleanup();
+        replyOk(id, QJsonObject{{"id", serverId}, {"deleted", true}});
+    });
+    *conns << connect(gh, &GitHubClient::writeError, this,
+                      [this, id, cleanup](const QString &e) { cleanup(); replyError(id, e); });
+    *conns << connect(gh, &GitHubClient::errorOccurred, this,
+                      [this, id, cleanup](const QString &e) { cleanup(); replyError(id, e); });
+
+    gh->setProperty("_delId", serverId);
+    gh->deleteFile("servers/" + serverId + ".json", "Suppression du serveur " + serverId + " via LAMI");
 }
 
 void Bridge::requireSuperAdmin(int id, std::function<void(const RoleTable &)> action)

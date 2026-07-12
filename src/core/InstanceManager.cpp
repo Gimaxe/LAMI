@@ -123,8 +123,9 @@ void InstanceManager::planByAddress(const QString &address, const MinecraftSessi
 
 void InstanceManager::onServerFetched(const ServerInfo &server)
 {
-    // Serveur protégé par mot de passe : on vérifie contre le hash.
-    if (!server.passwordHash.isEmpty()) {
+    // Serveur protégé par mot de passe : on vérifie contre le hash (sauf au
+    // lancement d'un serveur déjà installé, où la vérif est désactivée).
+    if (m_verifyPassword && !server.passwordHash.isEmpty()) {
         const QString h = QString::fromLatin1(
             QCryptographicHash::hash(m_password.toUtf8(), QCryptographicHash::Sha256).toHex());
         if (h != server.passwordHash) {

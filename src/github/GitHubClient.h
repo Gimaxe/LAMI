@@ -74,6 +74,10 @@ public:
     void upsertAddressIndex(const QString &address, const QString &serverId,
                             const QString &commitMessage);
 
+    // Retire du servers/index.json toutes les entrées pointant vers serverId.
+    // Émet indexUpdated / writeError.
+    void removeFromIndex(const QString &serverId, const QString &commitMessage);
+
     // Administration des rôles (roles.json). Émettent rolesUpdated / writeError.
     void setRole(const QString &uuid, const QString &role, const QString &commitMessage);
     void removeRole(const QString &uuid, const QString &commitMessage);

@@ -336,6 +336,15 @@
                                         <i data-lucide="link" class="w-3 h-3 text-neutral-500"></i>
                                         <span id="inst-srv-ip">smp.atraxe.net</span>
                                     </span>
+                                    <span class="text-neutral-700">•</span>
+                                    <span class="flex items-center gap-1 bg-brand-500/10 border border-brand-500/25 px-2 py-0.5 rounded font-bold text-brand-400">
+                                        <i data-lucide="box" class="w-3 h-3"></i>
+                                        <span id="inst-srv-version">1.20.1</span>
+                                    </span>
+                                    <span class="flex items-center gap-1 bg-neutral-950/40 border border-neutral-800/60 px-2 py-0.5 rounded font-semibold text-neutral-300">
+                                        <i data-lucide="layers" class="w-3 h-3 text-neutral-500"></i>
+                                        <span id="inst-srv-loader">Vanilla</span>
+                                    </span>
                                 </div>
                             </div>
                         </div>
@@ -1187,7 +1196,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.17.0";
+        const LAMI_VERSION = "0.18.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1562,7 +1571,6 @@
                         <div class="min-w-0 flex-1">
                             <span class="block text-xs font-bold text-neutral-200 truncate group-hover:text-white transition-all">${srv.name}</span>
                             <span class="block text-[10px] text-neutral-500 font-mono truncate">${srv.ip}</span>
-                            <span class="block text-[10px] text-brand-500/90 font-semibold truncate mt-0.5">${srv.version || '?'}${srv.loader && srv.loader.toLowerCase() !== 'vanilla' ? ' · ' + srv.loader : ' · Vanilla'}</span>
                         </div>
                     </div>
                     <div class="flex-shrink-0 ml-2">
@@ -2370,6 +2378,9 @@
                 document.getElementById('inst-srv-creator').innerText = `${server.creator || 'Atraxe Team'}`;
                 document.getElementById('inst-srv-ip').innerText = server.ip;
                 document.getElementById('inst-srv-logo').innerText = server.name.substring(0, 2).toUpperCase();
+                document.getElementById('inst-srv-version').innerText = server.version || '?';
+                document.getElementById('inst-srv-loader').innerText =
+                    (server.loader && server.loader.trim()) ? server.loader : 'Vanilla';
 
                 renderInstalledServerAssets(server);
                 // Le bouton reflète l'état réel : Fermer si CE serveur tourne, sinon Lancer.
@@ -2861,16 +2872,9 @@
             if (isPlaying) return;
 
             // Lancement RÉEL via le backend (télécharge si besoin puis démarre le jeu).
+            // Le mot de passe n'est demandé qu'à l'INSTALLATION : une fois le serveur
+            // installé, on lance sans le redemander.
             const srv = currentlySelectedServer;
-            // Serveur protégé sans mot de passe mémorisé : on le demande d'abord.
-            if (srv && srv.id && srv.hasPassword && serverPasswords[srv.id] === undefined
-                && window.lami && window.lami.connected) {
-                promptServerPassword(srv, function (pwd) {
-                    serverPasswords[srv.id] = pwd;
-                    simulateGameLaunch();
-                });
-                return;
-            }
             if (window.lami && window.lami.connected && srv && srv.id) {
                 isPlaying = true;
                 const btnPlay = document.getElementById('btn-play-dashboard');
@@ -2881,7 +2885,7 @@
                 if (status) status.innerText = "Préparation…";
                 const pseudo = (document.getElementById('player-name').innerText || 'Player').trim();
                 const ramGb = parseInt(document.getElementById('setting-ram-slider').value, 10) || 6;
-                lami.call('launch', { id: srv.id, username: pseudo, ramGb: ramGb, password: serverPasswords[srv.id] || '' })
+                lami.call('launch', { id: srv.id, username: pseudo, ramGb: ramGb })
                     .then(function () { /* l'événement 'launched' gère l'UI (bouton Fermer) */ })
                     .catch(function (err) { showToast("Lancement échoué : " + err.message, "error"); resetPlayUI(); setPlayButtonPlay(); });
                 return;
@@ -3313,8 +3317,10 @@
 
         // --- GESTION DE LA PAGE DE MODIFICATION DE CONFIGURATION (CLONE DE PUBLIER) ---
         function openEditConfigPage(serverId) {
-            const srv = mockServers.find(s => s.id === serverId);
-            if (!srv) return;
+            // Serveurs réels (repo) quand connecté, sinon démo.
+            const connected = window.lami && window.lami.connected;
+            const srv = (connected ? (catalog || []) : mockServers).find(s => s.id === serverId);
+            if (!srv) { showToast("Serveur introuvable.", "error"); return; }
 
             // Pré-remplir les données de l'onglet clone de modification
             document.getElementById('edit-srv-real-id').value = srv.id;
@@ -3364,6 +3370,28 @@
             e.preventDefault();
 
             const srvId = document.getElementById('edit-srv-real-id').value;
+
+            // Backend réel : modifie les métadonnées (mods/plugins préservés).
+            if (window.lami && window.lami.connected) {
+                const pwd = document.getElementById('edit-password').value;
+                lami.call('editServer', {
+                    id: srvId,
+                    name: document.getElementById('edit-name').value,
+                    ip: document.getElementById('edit-ip').value,
+                    version: document.getElementById('edit-version').value,
+                    loader: document.getElementById('edit-loader').value,
+                    password: pwd,
+                    passwordChanged: pwd.length > 0
+                }).then(function () {
+                    showToast('Serveur mis à jour.', 'success');
+                    refreshServersFromBackend();
+                    switchTab('mes-publications');
+                }).catch(function (err) {
+                    showToast('Modification échouée : ' + (err.message || err), 'error');
+                });
+                return;
+            }
+
             const srv = mockServers.find(s => s.id === srvId);
 
             if (srv) {
@@ -3419,16 +3447,29 @@
         }
 
         function deletePublishedServerCompletely(serverId) {
+            // Backend réel : suppression du manifeste + de l'index dans le repo.
+            if (window.lami && window.lami.connected) {
+                const srv = (catalog || []).find(s => s.id === serverId);
+                const name = srv ? srv.name : serverId;
+                if (!confirm(`Supprimer définitivement le serveur « ${name} » ?`)) return;
+                showToast('Suppression…', 'info');
+                lami.call('deleteServer', { id: serverId }).then(function () {
+                    showToast(`Le serveur "${name}" a été définitivement supprimé.`, 'success');
+                    if (currentlySelectedServer && currentlySelectedServer.id === serverId) goBackToSearch();
+                    refreshServersFromBackend();   // recharge catalogue + rendus
+                }).catch(function (err) {
+                    showToast('Suppression échouée : ' + (err.message || err), 'error');
+                });
+                return;
+            }
+            // Démo (page seule).
             const srvIndex = mockServers.findIndex(s => s.id === serverId);
             if (srvIndex !== -1) {
                 const name = mockServers[srvIndex].name;
                 mockServers.splice(srvIndex, 1);
                 showToast(`Le serveur "${name}" a été définitivement supprimé.`, "success");
-                
-                // Rafraîchir l'interface
                 renderServersSidebar();
                 renderUserPublishedServers();
-
                 if (currentlySelectedServer && currentlySelectedServer.id === serverId) {
                     goBackToSearch();
                 }

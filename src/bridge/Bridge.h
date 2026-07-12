@@ -58,6 +58,8 @@ private:
     void getSettings(int id);
     void saveSettings(int id, const QJsonObject &params);
     void publishServer(int id, const QJsonObject &params);
+    void editServer(int id, const QJsonObject &params);
+    void deleteServer(int id, const QJsonObject &params);
     void listRoles(int id);
     void setRole(int id, const QJsonObject &params);
     void removeRole(int id, const QJsonObject &params);

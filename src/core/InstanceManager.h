@@ -57,6 +57,10 @@ public:
     // Mot de passe fourni par le joueur (vérifié contre le hash du serveur).
     void setPassword(const QString &password) { m_password = password; }
 
+    // Active/désactive la vérification du mot de passe (activée par défaut).
+    // Le lancement d'un serveur DÉJÀ installé la désactive (mdp demandé à l'install).
+    void setVerifyPassword(bool on) { m_verifyPassword = on; }
+
 signals:
     void progress(const QString &step);
     void planReady(const lami::LaunchPlan &plan);
@@ -88,6 +92,7 @@ private:
     QNetworkAccessManager *m_net;
     QString m_resolvedJavaPath;   // JRE provisionné (sinon repli sur m_javaPath)
     QString m_password;           // mot de passe saisi par le joueur
+    bool    m_verifyPassword = true;  // vérifier le mdp ? (false au lancement installé)
     bool    m_forgeDone = false;  // profil Forge déjà fusionné ?
 
     QString m_token;

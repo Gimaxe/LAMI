@@ -468,6 +468,62 @@ void GitHubClient::upsertAddressIndex(const QString &address, const QString &ser
     });
 }
 
+void GitHubClient::removeFromIndex(const QString &serverId, const QString &commitMessage)
+{
+    if (m_token.isEmpty()) {
+        emit writeError(tr("Index : aucun token."));
+        return;
+    }
+
+    QNetworkRequest getReq{QUrl(apiContentsUrl("servers/index.json"))};
+    applyApiHeaders(getReq, m_token);
+    QNetworkReply *getReply = m_net->get(getReq);
+
+    connect(getReply, &QNetworkReply::finished, this,
+            [this, getReply, serverId, commitMessage]() {
+        getReply->deleteLater();
+        if (getReply->error() != QNetworkReply::NoError) {
+            // Pas d'index → rien à retirer, on considère l'opération réussie.
+            emit indexUpdated();
+            return;
+        }
+        const QJsonObject meta = QJsonDocument::fromJson(getReply->readAll()).object();
+        const QString sha = meta.value("sha").toString();
+        const QByteArray raw =
+            QByteArray::fromBase64(meta.value("content").toString().toUtf8());
+        QJsonObject index = QJsonDocument::fromJson(raw).object();
+
+        // Retire toutes les adresses pointant vers ce serveur.
+        for (const QString &key : index.keys())
+            if (index.value(key).toString() == serverId)
+                index.remove(key);
+
+        QJsonObject body{
+            {"message", commitMessage},
+            {"content", QString::fromLatin1(
+                            QJsonDocument(index).toJson(QJsonDocument::Indented).toBase64())},
+            {"branch", m_branch},
+        };
+        if (!sha.isEmpty())
+            body.insert("sha", sha);
+
+        QNetworkRequest putReq{QUrl(apiContentsUrlNoRef("servers/index.json"))};
+        applyApiHeaders(putReq, m_token);
+        putReq.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        QNetworkReply *putReply =
+            m_net->put(putReq, QJsonDocument(body).toJson(QJsonDocument::Compact));
+        connect(putReply, &QNetworkReply::finished, this, [this, putReply]() {
+            putReply->deleteLater();
+            if (putReply->error() != QNetworkReply::NoError) {
+                emit writeError(tr("Mise à jour de l'index échouée : %1")
+                                    .arg(putReply->errorString()));
+                return;
+            }
+            emit indexUpdated();
+        });
+    });
+}
+
 void GitHubClient::fetchAllServers()
 {
     // 1) Lister le dossier servers/ (l'API contents renvoie un tableau JSON).

@@ -176,6 +176,7 @@ if(LAMI_BUILD_TESTS)
         tests/test_instance.cpp
         src/core/InstanceManager.cpp
         src/minecraft/JavaProvisioner.cpp
+        src/minecraft/ForgeInstaller.cpp
         src/github/Models.cpp
         src/github/GitHubClient.cpp
         src/sync/SyncManager.cpp
@@ -204,6 +205,14 @@ if(LAMI_BUILD_TESTS)
     )
     target_include_directories(lami_test_install_forge PRIVATE src)
     target_link_libraries(lami_test_install_forge PRIVATE Qt${QT_VERSION_MAJOR}::Network)
+
+    qt_add_executable(lami_test_repoedit
+        tests/test_repoedit.cpp
+        src/github/GitHubClient.cpp
+        src/github/Models.cpp
+    )
+    target_include_directories(lami_test_repoedit PRIVATE src)
+    target_link_libraries(lami_test_repoedit PRIVATE Qt${QT_VERSION_MAJOR}::Network)
 
     qt_add_executable(lami_test_launch_diag
         tests/test_launch_diag.cpp
