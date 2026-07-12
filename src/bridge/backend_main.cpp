@@ -9,6 +9,9 @@
 int main(int argc, char *argv[])
 {
     QCoreApplication app(argc, argv);
+    // Nom d'application : détermine l'emplacement standard des données
+    // (%APPDATA%\Roaming\LAMI sur Windows, ~/.local/share/LAMI sur Linux).
+    QCoreApplication::setApplicationName("LAMI");
     QTextStream out(stdout);
 
     // Port fixe par défaut (la coquille l'injecte dans le JS) ; surchargeable.

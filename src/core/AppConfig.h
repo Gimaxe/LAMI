@@ -5,6 +5,7 @@
 #include <QFile>
 #include <QJsonDocument>
 #include <QJsonObject>
+#include <QStandardPaths>
 #include <QString>
 
 // Configuration runtime du launcher (valeurs simples pour l'instant ;
@@ -41,7 +42,13 @@ inline QString branch() { return "main"; }
 
 // Emplacement PAR DÉFAUT des données (et du fichier de réglages, qui y reste
 // toujours pour ne pas se perdre quand l'utilisateur change le dossier du jeu).
-inline QString defaultDataRoot() { return QDir::homePath() + "/.local/share/LAMI"; }
+// Emplacement STANDARD par OS : Windows -> %APPDATA%\Roaming\LAMI,
+// Linux -> ~/.local/share/LAMI, macOS -> ~/Library/Application Support/LAMI.
+inline QString defaultDataRoot()
+{
+    const QString p = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
+    return p.isEmpty() ? (QDir::homePath() + "/.local/share/LAMI") : p;
+}
 inline QString settingsFile() { return QDir(defaultDataRoot()).filePath("settings.json"); }
 
 inline QJsonObject readSettings()
