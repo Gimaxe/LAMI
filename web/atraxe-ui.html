@@ -66,7 +66,10 @@
             content: ''; position: absolute; inset: 0;
             background: linear-gradient(180deg, rgba(10,10,10,.72), rgba(10,10,10,.82));
         }
-        #main-content > *:not(#main-bg) { position: relative; z-index: 1; }
+        /* Le contenu passe au-dessus du fond. On EXCLUT le conteneur de toasts,
+           qui doit garder son positionnement absolu (haut-droite). */
+        #main-content > *:not(#main-bg):not(#toast-container) { position: relative; z-index: 1; }
+        #toast-container { z-index: 60; }
         /* Custom scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
@@ -1250,7 +1253,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.26.0";
+        const LAMI_VERSION = "0.27.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
