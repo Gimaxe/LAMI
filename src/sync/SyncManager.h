@@ -8,11 +8,18 @@
 
 namespace lami {
 
+// Un asset à télécharger, avec sa catégorie (mods/plugins/resourcepacks/shaders)
+// pour retrouver son chemin en banque et son dossier local.
+struct AssetRef {
+    QString   type;    // assets::Mods / Plugins / ResourcePacks / Shaders
+    ModEntry  entry;
+};
+
 // Résultat du calcul de synchro (voir src/sync/README.md).
 struct SyncPlan {
-    QVector<ModEntry> toDownload;  // absents localement ou hash différent
+    QVector<AssetRef> toDownload;  // absents localement ou hash différent
     QVector<QString>  toDelete;    // installés par le launcher, retirés du manifeste
-    QVector<ModEntry> upToDate;    // présents et hash conforme
+    QVector<AssetRef> upToDate;    // présents et hash conforme
 
     bool nothingToDo() const { return toDownload.isEmpty() && toDelete.isEmpty(); }
 };

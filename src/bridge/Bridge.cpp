@@ -681,11 +681,12 @@ void Bridge::startDownload(int id, const QJsonObject &params)
                 [this, id, serverId, plan, mgr, dl](int ok, int failed) {
             // Marque les mods du repo comme gérés par le launcher (sync non-destructif).
             SyncManager sync(plan.gameDir);
-            QStringList modPaths;
-            for (const ModEntry &m : plan.server.mods)
-                modPaths << modLocalPath(m);
-            if (!modPaths.isEmpty())
-                sync.markInstalled(modPaths);
+            QStringList assetPaths;
+            for (const char *type : {assets::Mods, assets::Plugins, assets::ResourcePacks, assets::Shaders})
+                for (const ModEntry &m : plan.server.assetList(type))
+                    assetPaths << assetLocalPath(type, m);
+            if (!assetPaths.isEmpty())
+                sync.markInstalled(assetPaths);
 
             replyOk(id, QJsonObject{{"id", serverId}, {"downloaded", ok}, {"failed", failed}});
             emit event(QJsonObject{{"event", "downloadDone"}, {"id", serverId}, {"failed", failed}});
@@ -742,11 +743,13 @@ void Bridge::launch(int id, const QJsonObject &params)
                 [this, id, serverId, plan, mgr, dl, ramGb](int, int failed) {
             dl->deleteLater(); mgr->deleteLater();
 
-            // Marque les mods installés (sync non-destructif).
+            // Marque les assets installés (sync non-destructif, toutes catégories).
             SyncManager sync(plan.gameDir);
-            QStringList modPaths;
-            for (const ModEntry &m : plan.server.mods) modPaths << modLocalPath(m);
-            if (!modPaths.isEmpty()) sync.markInstalled(modPaths);
+            QStringList assetPaths;
+            for (const char *type : {assets::Mods, assets::Plugins, assets::ResourcePacks, assets::Shaders})
+                for (const ModEntry &m : plan.server.assetList(type))
+                    assetPaths << assetLocalPath(type, m);
+            if (!assetPaths.isEmpty()) sync.markInstalled(assetPaths);
 
             // Prépare les dossiers puis démarre le jeu (QProcess détaché).
             QDir().mkpath(plan.gameDir);

@@ -305,21 +305,22 @@ void InstanceManager::assemblePlan(const QByteArray &assetIndexJson)
         }
     }
 
-    // 4) mods du repo (sync non-destructif, SHA256, téléchargement authentifié)
+    // 4) assets du repo — mods, plugins, resourcepacks, shaders (sync non-destructif,
+    //    SHA256, téléchargement authentifié). Chacun va dans son dossier d'instance.
     {
         SyncManager sync(instanceDir(m_server.id));
         const SyncPlan sp = sync.computePlan(m_server);
         plan.toDeleteMods = sp.toDelete;
 
         const QByteArray bearer = QByteArray("Bearer ") + m_token.toUtf8();
-        for (const ModEntry &mod : sp.toDownload) {
+        for (const AssetRef &a : sp.toDownload) {
             DownloadTask t;
-            // Source = banque mutualisée du repo ; destination = mods/ de l'instance.
-            t.url = m_gh->apiContentsUrl(modBankPath(m_server, mod));
-            t.dest = QDir(instanceDir(m_server.id)).filePath(modLocalPath(mod));
-            t.expectedHash = mod.sha256;
+            // Source = banque mutualisée du repo ; destination = dossier de l'instance.
+            t.url = m_gh->apiContentsUrl(assetBankPath(m_server, a.type, a.entry));
+            t.dest = QDir(instanceDir(m_server.id)).filePath(assetLocalPath(a.type, a.entry));
+            t.expectedHash = a.entry.sha256;
             t.algo = QCryptographicHash::Sha256;
-            t.size = mod.size;
+            t.size = a.entry.size;
             if (!m_token.isEmpty()) {
                 t.headers.append({QByteArray("Authorization"), bearer});
                 t.headers.append({QByteArray("Accept"), QByteArray("application/vnd.github.raw+json")});

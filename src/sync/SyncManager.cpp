@@ -85,25 +85,28 @@ SyncPlan SyncManager::computePlan(const ServerInfo &server) const
     SyncPlan plan;
 
     QSet<QString> manifestPaths;
-    manifestPaths.reserve(server.mods.size());
 
-    // 1) Ce que le manifeste demande : à télécharger (manquant / hash différent)
-    //    ou déjà bon. Le mod est copié localement dans <instance>/mods/<file>.
-    for (const ModEntry &mod : server.mods) {
-        const QString rel = modLocalPath(mod);
-        manifestPaths.insert(rel);
-        const QString local = absPath(rel);
+    // 1) Ce que le manifeste demande, pour CHAQUE catégorie (mods, plugins,
+    //    resourcepacks, shaders) : à télécharger (manquant / hash différent) ou
+    //    déjà bon. Chaque asset est copié dans <instance>/<dossier>/<file>.
+    for (const char *type : {assets::Mods, assets::Plugins,
+                             assets::ResourcePacks, assets::Shaders}) {
+        for (const ModEntry &asset : server.assetList(type)) {
+            const QString rel = assetLocalPath(type, asset);
+            manifestPaths.insert(rel);
+            const QString local = absPath(rel);
+            const AssetRef ref{type, asset};
 
-        if (!QFileInfo::exists(local)) {
-            plan.toDownload.push_back(mod);
-            continue;
+            if (!QFileInfo::exists(local)) {
+                plan.toDownload.push_back(ref);
+                continue;
+            }
+            const QString localHash = sha256File(local);
+            if (localHash.compare(asset.sha256, Qt::CaseInsensitive) == 0)
+                plan.upToDate.push_back(ref);
+            else
+                plan.toDownload.push_back(ref);
         }
-
-        const QString localHash = sha256File(local);
-        if (localHash.compare(mod.sha256, Qt::CaseInsensitive) == 0)
-            plan.upToDate.push_back(mod);
-        else
-            plan.toDownload.push_back(mod);
     }
 
     // 2) Suppressions PRUDENTES : uniquement des fichiers que le launcher a lui-

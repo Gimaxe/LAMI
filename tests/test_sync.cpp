@@ -67,8 +67,8 @@ int main(int argc, char *argv[])
     // --- Calcul du plan ---
     const SyncPlan plan = mgr.computePlan(srv);
 
-    auto contains = [](const QVector<ModEntry> &v, const QString &file) {
-        for (const ModEntry &e : v) if (e.file == file) return true;
+    auto contains = [](const QVector<AssetRef> &v, const QString &file) {
+        for (const AssetRef &e : v) if (e.entry.file == file) return true;
         return false;
     };
 

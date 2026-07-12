@@ -41,7 +41,10 @@ QVector<ModEntry> &ServerInfo::assetList(const QString &type)
 
 QString assetLocalPath(const QString &type, const ModEntry &e)
 {
-    return type + "/" + e.file;   // mods/… plugins/… resourcepacks/… shaders/…
+    // Dossier client réellement lu par le jeu : les shaders vont dans
+    // « shaderpacks/ » (Iris/OptiFine), les autres portent le nom de la catégorie.
+    const QString dir = (type == assets::Shaders) ? QStringLiteral("shaderpacks") : type;
+    return dir + "/" + e.file;   // mods/… plugins/… resourcepacks/… shaderpacks/…
 }
 
 QString assetBankPath(const ServerInfo &server, const QString &type, const ModEntry &e)
