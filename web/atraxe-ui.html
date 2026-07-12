@@ -1180,7 +1180,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.13.0";
+        const LAMI_VERSION = "0.14.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1218,6 +1218,7 @@
             lami.call('listServers').then(function (r) {
                 catalog = (r.servers || []).map(normalizeServer);
                 renderServersSidebar();
+                renderUserPublishedServers();   // met à jour l'onglet « Mes publications »
             }).catch(function () { /* garde la démo en cas d'échec */ });
             lami.call('listInstalled').then(function (r) {
                 installedIds = new Set(r.installed || []);
@@ -3149,6 +3150,7 @@
                 return lami.call('publishServer', {
                     name: meta.name, ip: meta.ip, port: meta.port,
                     version: meta.version, loader: meta.loader, loaderVersion: meta.loaderVersion || '',
+                    password: meta.password || '',   // haché côté backend (jamais en clair)
                     modsZip: b64[0], pluginsZip: b64[1], packsZip: b64[2], shadersZip: b64[3]
                 });
             }).then(function () {
@@ -3173,8 +3175,12 @@
 
             container.innerHTML = '';
 
-            // Filtrer les serveurs dont le créateur est "Moi" ou "Valkyrie_91" ou "Hexa_Miner" pour la démo
-            const userServers = mockServers.filter(s => s.creator === 'Moi' || s.creator === 'Valkyrie_91' || s.creator === 'Hexa_Miner');
+            // Connecté au backend : on liste les VRAIS serveurs publiés (repo).
+            // Sinon (page ouverte seule), on retombe sur les données de démo.
+            const connected = window.lami && window.lami.connected;
+            const userServers = connected
+                ? (catalog || [])
+                : mockServers.filter(s => s.creator === 'Moi' || s.creator === 'Valkyrie_91' || s.creator === 'Hexa_Miner');
 
             if (userServers.length === 0) {
                 container.innerHTML = `<span class="text-xs text-neutral-500 italic p-4 block text-center">Aucun serveur publié par vos soins pour le moment.</span>`;

@@ -328,6 +328,12 @@ void Bridge::listLoaderVersions(int id, const QJsonObject &params)
             // Forge : on retire le préfixe "<mc>-" pour n'afficher que la version du loader.
             kept << (loader == "forge" && !prefix.isEmpty() ? QString(v).mid(prefix.size()) : v);
         }
+        // Repli : si aucune version ne correspond à la version Minecraft choisie
+        // (ex. NeoForge n'existe pas pour 1.20.1), on montre quand même toutes les
+        // versions disponibles plutôt qu'une liste vide.
+        if (kept.isEmpty())
+            kept = all;
+
         // Dernière version en premier (le maven-metadata est croissant).
         std::reverse(kept.begin(), kept.end());
         for (const QString &v : kept) out.append(v);
