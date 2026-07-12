@@ -280,8 +280,12 @@ void Bridge::listLoaderVersions(int id, const QJsonObject &params)
 
     QString url;
     bool xml = false;   // Forge/NeoForge = maven-metadata.xml ; Fabric/Quilt = JSON
-    if (loader == "fabric")        url = "https://meta.fabricmc.net/v2/versions/loader";
-    else if (loader == "quilt")    url = "https://meta.quiltmc.org/v3/versions/loader";
+    // Fabric/Quilt : l'endpoint « /loader/<mcVersion> » ne renvoie QUE les loaders
+    // compatibles avec cette version de Minecraft (sinon la liste complète).
+    if (loader == "fabric")
+        url = "https://meta.fabricmc.net/v2/versions/loader" + (mc.isEmpty() ? QString() : "/" + mc);
+    else if (loader == "quilt")
+        url = "https://meta.quiltmc.org/v3/versions/loader" + (mc.isEmpty() ? QString() : "/" + mc);
     else if (loader == "forge")  { url = "https://maven.minecraftforge.net/net/minecraftforge/forge/maven-metadata.xml"; xml = true; }
     else if (loader == "neoforge"){ url = "https://maven.neoforged.net/releases/net/neoforged/neoforge/maven-metadata.xml"; xml = true; }
     else { replyOk(id, QJsonObject{{"versions", QJsonArray{}}}); return; }
@@ -297,8 +301,12 @@ void Bridge::listLoaderVersions(int id, const QJsonObject &params)
 
         if (!xml) {
             // Fabric / Quilt : JSON, versions déjà triées (dernière en premier).
+            // Endpoint générique : objets { "version": ... }.
+            // Endpoint par version de jeu : objets { "loader": { "version": ... } }.
             for (const QJsonValue &v : QJsonDocument::fromJson(body).array()) {
-                const QString ver = v.toObject().value("version").toString();
+                const QJsonObject o = v.toObject();
+                QString ver = o.value("loader").toObject().value("version").toString();
+                if (ver.isEmpty()) ver = o.value("version").toString();
                 if (!ver.isEmpty()) out.append(ver);
             }
             replyOk(id, QJsonObject{{"versions", out}});
@@ -328,11 +336,9 @@ void Bridge::listLoaderVersions(int id, const QJsonObject &params)
             // Forge : on retire le préfixe "<mc>-" pour n'afficher que la version du loader.
             kept << (loader == "forge" && !prefix.isEmpty() ? QString(v).mid(prefix.size()) : v);
         }
-        // Repli : si aucune version ne correspond à la version Minecraft choisie
-        // (ex. NeoForge n'existe pas pour 1.20.1), on montre quand même toutes les
-        // versions disponibles plutôt qu'une liste vide.
-        if (kept.isEmpty())
-            kept = all;
+        // Filtre strict : on ne montre QUE les versions compatibles avec la version
+        // Minecraft choisie (ex. NeoForge n'existe pas pour 1.20.1 → liste vide,
+        // c'est volontaire : ce loader n'est pas compatible avec cette version).
 
         // Dernière version en premier (le maven-metadata est croissant).
         std::reverse(kept.begin(), kept.end());
