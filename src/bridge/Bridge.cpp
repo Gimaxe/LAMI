@@ -10,8 +10,10 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QCoreApplication>
 #include <QProcess>
 #include <QStandardPaths>
+#include <QTimer>
 #include <memory>
 
 #include "auth/MicrosoftAuth.h"
@@ -98,6 +100,8 @@ void Bridge::handle(const QJsonObject &request)
         stopGame(id, params);
     } else if (method == "checkUpdate") {
         checkUpdate(id, params);
+    } else if (method == "installUpdate") {
+        installUpdate(id, params);
     } else if (method == "openUrl") {
         openUrl(id, params);
     } else if (method == "uninstall") {
@@ -207,6 +211,149 @@ void Bridge::checkUpdate(int id, const QJsonObject &params)
             {"url", o.value("html_url").toString("https://github.com/Gimaxe/LAMI/releases/latest")},
         });
     });
+}
+
+// Auto-mise à jour : télécharge l'archive de la dernière release pour la
+// plateforme courante, puis lance un script détaché qui ferme l'app, remplace
+// les fichiers en place et relance le launcher. Aucun remplacement manuel.
+void Bridge::installUpdate(int id, const QJsonObject &params)
+{
+    Q_UNUSED(params);
+#if defined(Q_OS_WIN)
+    const QString wantPlatform = "windows";
+    const QString wantExt = ".zip";
+#else
+    const QString wantPlatform = "linux";
+    const QString wantExt = ".tar.gz";
+#endif
+
+    QNetworkRequest req{QUrl("https://api.github.com/repos/Gimaxe/LAMI/releases/latest")};
+    req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+    req.setRawHeader("Accept", "application/vnd.github+json");
+    QNetworkReply *reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, id, reply, wantPlatform, wantExt]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            replyError(id, "Release introuvable : " + reply->errorString());
+            return;
+        }
+        const QJsonObject rel = QJsonDocument::fromJson(reply->readAll()).object();
+        // Choix de l'asset correspondant à la plateforme.
+        QString assetUrl, assetName;
+        for (const QJsonValue &av : rel.value("assets").toArray()) {
+            const QJsonObject a = av.toObject();
+            const QString n = a.value("name").toString();
+            if (n.contains(wantPlatform) && n.endsWith(wantExt)) {
+                assetName = n;
+                assetUrl  = a.value("browser_download_url").toString();
+                break;
+            }
+        }
+        if (assetUrl.isEmpty()) {
+            replyError(id, "Aucun paquet de mise à jour pour cette plateforme.");
+            return;
+        }
+
+        emit event(QJsonObject{{"event", "updateProgress"}, {"step", "Téléchargement…"}, {"percent", 0}});
+
+        const QString tmp = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+        const QString archive = QDir(tmp).filePath(assetName);
+
+        QNetworkRequest dreq{QUrl(assetUrl)};
+        dreq.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+        dreq.setAttribute(QNetworkRequest::RedirectPolicyAttribute,
+                          QNetworkRequest::NoLessSafeRedirectPolicy);
+        QNetworkReply *dl = m_net->get(dreq);
+        connect(dl, &QNetworkReply::downloadProgress, this, [this](qint64 done, qint64 total) {
+            emit event(QJsonObject{{"event", "updateProgress"}, {"step", "Téléchargement…"},
+                                   {"percent", total > 0 ? int(done * 100 / total) : 0}});
+        });
+        connect(dl, &QNetworkReply::finished, this, [this, id, dl, archive]() {
+            dl->deleteLater();
+            if (dl->error() != QNetworkReply::NoError) {
+                replyError(id, "Téléchargement de la mise à jour échoué : " + dl->errorString());
+                return;
+            }
+            QFile f(archive);
+            if (!f.open(QIODevice::WriteOnly) || f.write(dl->readAll()) < 0) {
+                replyError(id, "Écriture de l'archive impossible.");
+                return;
+            }
+            f.close();
+
+            const QString installDir = QCoreApplication::applicationDirPath();
+            const QString staging = QDir(QStandardPaths::writableLocation(
+                QStandardPaths::TempLocation)).filePath("lami-update-staging");
+
+            if (!writeAndRunUpdater(installDir, archive, staging)) {
+                replyError(id, "Impossible de lancer le programme de mise à jour.");
+                return;
+            }
+
+            emit event(QJsonObject{{"event", "updateProgress"},
+                                   {"step", "Installation… l'application va redémarrer."},
+                                   {"percent", 100}});
+            replyOk(id, QJsonObject{{"installing", true}});
+
+            // On laisse le temps à l'événement de partir, puis on quitte pour
+            // libérer les fichiers (le script force la fermeture de toute façon).
+            QTimer::singleShot(1200, qApp, &QCoreApplication::quit);
+        });
+    });
+}
+
+// Écrit le script de mise à jour propre à l'OS et le lance détaché.
+bool Bridge::writeAndRunUpdater(const QString &installDir, const QString &archive,
+                                const QString &staging)
+{
+    const QString tmp = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+#if defined(Q_OS_WIN)
+    const QString script = QDir(tmp).filePath("lami-update.ps1");
+    QString ps;
+    ps += "Start-Sleep -Seconds 1\n";
+    ps += "Get-Process lami_shell,lami_backend -ErrorAction SilentlyContinue | Stop-Process -Force -ErrorAction SilentlyContinue\n";
+    ps += "Start-Sleep -Seconds 1\n";
+    ps += "$staging = '" + QDir::toNativeSeparators(staging) + "'\n";
+    ps += "Remove-Item -Recurse -Force $staging -ErrorAction SilentlyContinue\n";
+    ps += "New-Item -ItemType Directory -Force -Path $staging | Out-Null\n";
+    ps += "Expand-Archive -Path '" + QDir::toNativeSeparators(archive) + "' -DestinationPath $staging -Force\n";
+    // Quelques tentatives au cas où un fichier serait encore verrouillé.
+    ps += "for ($i=0; $i -lt 10; $i++) {\n";
+    ps += "  try { Copy-Item -Path (Join-Path $staging '*') -Destination '" + QDir::toNativeSeparators(installDir) + "' -Recurse -Force -ErrorAction Stop; break }\n";
+    ps += "  catch { Start-Sleep -Seconds 1 }\n";
+    ps += "}\n";
+    ps += "Remove-Item -Recurse -Force $staging -ErrorAction SilentlyContinue\n";
+    ps += "Remove-Item -Force '" + QDir::toNativeSeparators(archive) + "' -ErrorAction SilentlyContinue\n";
+    ps += "Start-Process -FilePath '" + QDir::toNativeSeparators(installDir) + "\\lami_shell.exe'\n";
+
+    QFile f(script);
+    if (!f.open(QIODevice::WriteOnly)) return false;
+    f.write(ps.toUtf8()); f.close();
+    return QProcess::startDetached("powershell", {"-NoProfile", "-ExecutionPolicy", "Bypass",
+                                                  "-WindowStyle", "Hidden", "-File", script});
+#else
+    const QString script = QDir(tmp).filePath("lami-update.sh");
+    QString sh;
+    sh += "#!/bin/sh\n";
+    sh += "sleep 1\n";
+    sh += "pkill -f '/lami_shell' 2>/dev/null\n";
+    sh += "pkill -f '/lami_backend' 2>/dev/null\n";
+    sh += "sleep 1\n";
+    sh += "staging='" + staging + "'\n";
+    sh += "rm -rf \"$staging\"; mkdir -p \"$staging\"\n";
+    sh += "tar xzf '" + archive + "' -C \"$staging\"\n";
+    sh += "cp -a \"$staging/.\" '" + installDir + "/'\n";
+    sh += "rm -rf \"$staging\" '" + archive + "'\n";
+    sh += "chmod +x '" + installDir + "/lami_shell' '" + installDir + "/lami_backend' 2>/dev/null\n";
+    sh += "( '" + installDir + "/lami_shell' >/dev/null 2>&1 & )\n";
+
+    QFile f(script);
+    if (!f.open(QIODevice::WriteOnly)) return false;
+    f.write(sh.toUtf8()); f.close();
+    QFile::setPermissions(script, QFileDevice::ReadOwner | QFileDevice::WriteOwner
+                                  | QFileDevice::ExeOwner);
+    return QProcess::startDetached("/bin/sh", {script});
+#endif
 }
 
 // Ouvre une URL dans le navigateur par défaut de l'OS.

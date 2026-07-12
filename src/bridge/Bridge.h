@@ -49,6 +49,9 @@ private:
     void launch(int id, const QJsonObject &params);
     void stopGame(int id, const QJsonObject &params);
     void checkUpdate(int id, const QJsonObject &params);
+    void installUpdate(int id, const QJsonObject &params);
+    bool writeAndRunUpdater(const QString &installDir, const QString &archive,
+                            const QString &staging);
     void openUrl(int id, const QJsonObject &params);
     void uninstall(int id, const QJsonObject &params);
     void getSettings(int id);

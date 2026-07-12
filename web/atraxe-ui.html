@@ -1146,13 +1146,20 @@
                 <i data-lucide="download-cloud" class="w-7 h-7"></i>
             </div>
             <div class="text-center">
-                <h2 class="text-xl font-black text-white">Mise à jour requise</h2>
-                <p class="text-sm text-neutral-400 mt-2">Une nouvelle version de LAMI est disponible. Mets à jour pour continuer.</p>
+                <h2 class="text-xl font-black text-white">Mise à jour disponible</h2>
+                <p class="text-sm text-neutral-400 mt-2">Une nouvelle version de LAMI est disponible. Elle s'installe toute seule et le launcher redémarre.</p>
                 <p id="update-versions" class="text-xs text-neutral-500 mt-2 font-mono"></p>
             </div>
-            <button onclick="downloadUpdate()" class="w-full py-3.5 px-4 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all">
+            <!-- Progression de l'installation auto (masquée tant qu'on n'a pas cliqué) -->
+            <div id="update-progress-wrapper" class="hidden w-full flex flex-col gap-2">
+                <div class="w-full h-2 bg-neutral-800 rounded-full overflow-hidden">
+                    <div id="update-progress-bar" class="h-full bg-brand rounded-full transition-all duration-300" style="width:0%"></div>
+                </div>
+                <p id="update-progress-status" class="text-xs text-neutral-400 text-center">Préparation…</p>
+            </div>
+            <button id="update-install-btn" onclick="downloadUpdate()" class="w-full py-3.5 px-4 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl flex items-center justify-center gap-2 transition-all">
                 <i data-lucide="download" class="w-4 h-4"></i>
-                <span>Télécharger la mise à jour</span>
+                <span>Installer et redémarrer</span>
             </button>
         </div>
     </div>
@@ -1180,7 +1187,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.15.0";
+        const LAMI_VERSION = "0.16.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1434,6 +1441,12 @@
                     showToast("Minecraft fermé.", "info");
                     setPlayButtonPlay();
                 });
+                lami.on('updateProgress', function (m) {
+                    const bar = document.getElementById('update-progress-bar');
+                    const st = document.getElementById('update-progress-status');
+                    if (bar && typeof m.percent === 'number') bar.style.width = m.percent + '%';
+                    if (st && m.step) st.innerText = m.step + (typeof m.percent === 'number' ? ' (' + m.percent + '%)' : '');
+                });
                 lami.on('downloadDone', function (m) {
                     if (m.id !== activeDownload.serverId) return;
                     const srv = activeDownload.serverObj;
@@ -1672,8 +1685,18 @@
             }).catch(function () {});
         }
         function downloadUpdate() {
-            if (window.lami && window.lami.connected && updateUrl)
-                lami.call('openUrl', { url: updateUrl }).catch(function () {});
+            if (!window.lami || !window.lami.connected) return;
+            const btn = document.getElementById('update-install-btn');
+            const wrap = document.getElementById('update-progress-wrapper');
+            if (btn) { btn.disabled = true; btn.classList.add('opacity-50', 'cursor-not-allowed'); }
+            if (wrap) wrap.classList.remove('hidden');
+            // Installe automatiquement : télécharge, remplace les fichiers, redémarre.
+            lami.call('installUpdate', {}).catch(function (err) {
+                showToast('Mise à jour échouée : ' + (err.message || err), 'error');
+                if (btn) { btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed'); }
+                // Repli : ouvrir la page des releases pour une mise à jour manuelle.
+                if (updateUrl) lami.call('openUrl', { url: updateUrl }).catch(function () {});
+            });
         }
 
         // Connexion Microsoft.
