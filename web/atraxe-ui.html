@@ -7,17 +7,20 @@
     <!-- Tailwind CSS (vendorisé, hors-ligne) -->
     <script src="vendor/tailwind.min.js"></script>
     <script>
+        // Couleur d'accent (« brand ») pilotée par des variables CSS -> modifiable
+        // à chaud depuis les réglages. Chaque nuance = "R G B" dans :root.
         tailwind.config = {
             theme: {
                 extend: {
                     colors: {
                         brand: {
-                            50: '#ecfeff',
-                            100: '#cffafe',
-                            500: '#06b6d4', // Vert cyan / Cyan éclatant
-                            600: '#0891b2', // Vert cyan intermédiaire
-                            700: '#0e7490', // Vert cyan foncé
-                            DEFAULT: '#0e7490' // Vert cyan par défaut
+                            50:  'rgb(var(--brand-50) / <alpha-value>)',
+                            100: 'rgb(var(--brand-100) / <alpha-value>)',
+                            400: 'rgb(var(--brand-400) / <alpha-value>)',
+                            500: 'rgb(var(--brand-500) / <alpha-value>)',
+                            600: 'rgb(var(--brand-600) / <alpha-value>)',
+                            700: 'rgb(var(--brand-700) / <alpha-value>)',
+                            DEFAULT: 'rgb(var(--brand-500) / <alpha-value>)'
                         },
                         dark: {
                             card: '#171717',
@@ -38,9 +41,32 @@
     <!-- Style personnalisé pour masquer la scrollbar et polir les transitions -->
     <style>
         @import url('vendor/fonts.css');
+        /* Nuances de la couleur d'accent (défaut : cyan). Recalculées en JS. */
+        :root {
+            --brand-50:  236 254 255;
+            --brand-100: 207 250 254;
+            --brand-400: 34 211 238;
+            --brand-500: 6 182 212;
+            --brand-600: 8 145 178;
+            --brand-700: 14 116 144;
+        }
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
         }
+        /* Fond d'écran optionnel de la zone principale (droite). */
+        #main-content { position: relative; }
+        #main-bg {
+            position: absolute; inset: 0; z-index: 0;
+            background-size: cover; background-position: center; background-repeat: no-repeat;
+            opacity: 0; transition: opacity .4s ease; pointer-events: none;
+        }
+        #main-bg.active { opacity: 1; }
+        /* Voile sombre au-dessus de l'image pour garder le texte lisible. */
+        #main-bg.active::after {
+            content: ''; position: absolute; inset: 0;
+            background: linear-gradient(180deg, rgba(10,10,10,.72), rgba(10,10,10,.82));
+        }
+        #main-content > *:not(#main-bg) { position: relative; z-index: 1; }
         /* Custom scrollbar */
         ::-webkit-scrollbar {
             width: 6px;
@@ -170,8 +196,10 @@
     </aside>
 
     <!-- ZONE DE CONTENU PRINCIPALE -->
-    <main class="flex-1 bg-neutral-900 flex flex-col min-w-0 relative">
-        
+    <main id="main-content" class="flex-1 bg-neutral-900 flex flex-col min-w-0 relative">
+        <!-- Calque de fond d'écran optionnel (image choisie dans les réglages) -->
+        <div id="main-bg"></div>
+
         <!-- Header moderne avec sélecteur de rôle intégré et version du launcher -->
         <header class="h-16 border-b border-neutral-800/40 px-8 flex items-center justify-between flex-shrink-0 gap-4">
             <div class="flex items-center gap-3">
@@ -1107,6 +1135,40 @@
                         </div>
                     </div>
 
+                    <!-- Section : Apparence (couleur d'accent + fond d'écran) -->
+                    <div class="bg-neutral-950/40 border border-neutral-800/60 rounded-2xl p-6 flex flex-col gap-5">
+                        <div class="flex items-center gap-3">
+                            <div class="w-8 h-8 rounded-lg bg-brand/10 text-brand-500 flex items-center justify-center">
+                                <i data-lucide="palette" class="w-4.5 h-4.5"></i>
+                            </div>
+                            <h3 class="font-bold text-sm text-neutral-200">Apparence</h3>
+                        </div>
+
+                        <!-- Couleur principale -->
+                        <div class="flex flex-col gap-2">
+                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Couleur principale</label>
+                            <div id="accent-swatches" class="flex flex-wrap gap-2.5"></div>
+                            <div class="flex items-center gap-2 mt-1 flex-wrap">
+                                <input type="color" id="accent-color-picker" value="#06b6d4" oninput="onAccentInput(this.value)" class="w-10 h-10 rounded-lg bg-transparent border border-neutral-800 cursor-pointer p-0">
+                                <input type="text" id="accent-hex" placeholder="#06b6d4" oninput="onAccentHex(this.value)" class="w-32 bg-dark-input border border-neutral-800 rounded-xl px-3 py-2 text-sm text-white outline-none focus:border-brand">
+                                <span class="text-[10px] text-neutral-500">Choisis une couleur ou saisis un code hex.</span>
+                            </div>
+                        </div>
+
+                        <!-- Fond d'écran de la zone principale -->
+                        <div class="flex flex-col gap-2">
+                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Fond d'écran (zone principale)</label>
+                            <div id="bg-thumbs" class="grid grid-cols-3 sm:grid-cols-4 gap-2.5"></div>
+                            <span class="text-[10px] text-neutral-500">Ajoute tes propres images dans le dossier <span class="text-neutral-400 font-mono">web/assets/backgrounds/</span> de l'app, puis reviens ici.</span>
+                        </div>
+
+                        <div class="flex justify-end pt-1">
+                            <button onclick="saveSettingSection('Apparence')" class="px-5 py-2.5 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl text-xs transition-all shadow-md">
+                                Enregistrer la section
+                            </button>
+                        </div>
+                    </div>
+
                 </div>
 
             </div>
@@ -1188,7 +1250,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.24.0";
+        const LAMI_VERSION = "0.25.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1241,7 +1303,12 @@
                 const v = document.getElementById('setting-jvm');       if (v) v.value = s.jvmArgs || '';
                 const o = document.getElementById('setting-onlaunch');  if (o && s.closeBehavior) o.value = s.closeBehavior;
                 if (g && s.defaultDataRoot) g.placeholder = 'Défaut : ' + s.defaultDataRoot;
+                // Apparence : applique la couleur d'accent et le fond enregistrés.
+                setAccent(s.accentColor && isValidHex(s.accentColor) ? s.accentColor : '#06b6d4', true);
+                currentBg = s.bgImage || '';
+                applyBackground(currentBg);
             }).catch(function () {});
+            loadBackgrounds();   // remplit les vignettes de fond
             populatePublishVersions();   // remplit les listes de versions du formulaire
         }
 
@@ -1371,7 +1438,11 @@
 
             // S'assurer de la visibilité initiale selon le rôle
             setDemoRole('player');
-            
+
+            // Apparence : afficher les pastilles de couleur + appliquer l'accent par défaut.
+            setAccent(currentAccent, true);
+            renderBackgrounds([]);
+
             // Initialiser le slider de RAM
             updateRamSliderValue(document.getElementById('setting-ram-slider').value);
 
@@ -3563,6 +3634,111 @@
             event.target.closest('tr').remove();
         }
 
+        // ================= APPARENCE : couleur d'accent + fond d'écran =================
+        const PRESET_ACCENTS = [
+            { name: 'Cyan',    hex: '#06b6d4' },
+            { name: 'Violet',  hex: '#8b5cf6' },
+            { name: 'Émeraude',hex: '#10b981' },
+            { name: 'Rose',    hex: '#f43f5e' },
+            { name: 'Ambre',   hex: '#f59e0b' }
+        ];
+        let currentAccent = '#06b6d4';
+        let currentBg = '';   // '' = aucun fond
+
+        function hexToRgb(hex) {
+            hex = (hex || '').trim().replace('#', '');
+            if (hex.length === 3) hex = hex.split('').map(function (c) { return c + c; }).join('');
+            const n = parseInt(hex, 16);
+            return [(n >> 16) & 255, (n >> 8) & 255, n & 255];
+        }
+        function mixRgb(rgb, target, t) {
+            return rgb.map(function (c, i) { return Math.round(c + (target[i] - c) * t); });
+        }
+        function isValidHex(hex) { return /^#?[0-9a-fA-F]{3}([0-9a-fA-F]{3})?$/.test((hex || '').trim()); }
+
+        // Applique la couleur d'accent en recalculant toutes les nuances (vars CSS).
+        function applyAccent(hex) {
+            if (!isValidHex(hex)) return false;
+            const base = hexToRgb(hex), white = [255, 255, 255], black = [0, 0, 0];
+            const shades = {
+                '50': mixRgb(base, white, 0.88), '100': mixRgb(base, white, 0.75),
+                '400': mixRgb(base, white, 0.20), '500': base,
+                '600': mixRgb(base, black, 0.16), '700': mixRgb(base, black, 0.32)
+            };
+            const root = document.documentElement;
+            Object.keys(shades).forEach(function (k) {
+                root.style.setProperty('--brand-' + k, shades[k].join(' '));
+            });
+            return true;
+        }
+        function setAccent(hex, syncFields) {
+            if (!applyAccent(hex)) return;
+            currentAccent = hex.startsWith('#') ? hex : '#' + hex;
+            if (syncFields !== false) {
+                const p = document.getElementById('accent-color-picker'); if (p) p.value = currentAccent;
+                const h = document.getElementById('accent-hex'); if (h) h.value = currentAccent;
+            }
+            renderAccentSwatches();
+        }
+        function onAccentInput(hex) { setAccent(hex, true); }
+        function onAccentHex(hex) { if (isValidHex(hex)) setAccent(hex, false); }
+
+        function renderAccentSwatches() {
+            const c = document.getElementById('accent-swatches');
+            if (!c) return;
+            c.innerHTML = '';
+            PRESET_ACCENTS.forEach(function (a) {
+                const b = document.createElement('button');
+                const sel = a.hex.toLowerCase() === (currentAccent || '').toLowerCase();
+                b.title = a.name;
+                b.className = 'w-9 h-9 rounded-full border-2 transition-all ' +
+                    (sel ? 'border-white scale-110' : 'border-neutral-700 hover:border-neutral-400');
+                b.style.background = a.hex;
+                b.onclick = function () { setAccent(a.hex, true); };
+                c.appendChild(b);
+            });
+        }
+
+        // Applique le fond d'écran de la zone principale.
+        function applyBackground(name) {
+            const el = document.getElementById('main-bg');
+            if (!el) return;
+            if (!name) { el.classList.remove('active'); el.style.backgroundImage = ''; return; }
+            el.style.backgroundImage = "url('assets/backgrounds/" + name + "')";
+            el.classList.add('active');
+        }
+        function selectBackground(name) { currentBg = name || ''; applyBackground(currentBg); renderBackgrounds(bgList); }
+
+        let bgList = [];
+        function renderBackgrounds(list) {
+            bgList = list || [];
+            const c = document.getElementById('bg-thumbs');
+            if (!c) return;
+            c.innerHTML = '';
+            // Option « Aucun ».
+            const none = document.createElement('button');
+            none.className = 'aspect-video rounded-lg border-2 flex items-center justify-center text-[10px] font-bold text-neutral-400 bg-neutral-900 ' +
+                (!currentBg ? 'border-brand' : 'border-neutral-800 hover:border-neutral-600');
+            none.innerText = 'Aucun';
+            none.onclick = function () { selectBackground(''); };
+            c.appendChild(none);
+            bgList.forEach(function (name) {
+                const b = document.createElement('button');
+                const sel = name === currentBg;
+                b.title = name;
+                b.className = 'aspect-video rounded-lg border-2 bg-cover bg-center overflow-hidden ' +
+                    (sel ? 'border-brand scale-[1.03]' : 'border-neutral-800 hover:border-neutral-600');
+                b.style.backgroundImage = "url('assets/backgrounds/" + name + "')";
+                b.onclick = function () { selectBackground(name); };
+                c.appendChild(b);
+            });
+        }
+        function loadBackgrounds() {
+            if (!window.lami || !window.lami.connected) { renderBackgrounds([]); return; }
+            lami.call('listBackgrounds').then(function (r) { renderBackgrounds(r.backgrounds || []); })
+                .catch(function () { renderBackgrounds([]); });
+        }
+
         function saveSettingSection(sectionName) {
             let payload = {};
             let okMsg = 'Réglages enregistrés.';
@@ -3577,6 +3753,10 @@
                 payload.jvmArgs = document.getElementById('setting-jvm').value;
                 payload.closeBehavior = document.getElementById('setting-onlaunch').value;
                 okMsg = 'Paramètres de jeu enregistrés.';
+            } else if (sectionName === 'Apparence') {
+                payload.accentColor = currentAccent;
+                payload.bgImage = currentBg;
+                okMsg = 'Apparence enregistrée.';
             }
             if (window.lami && window.lami.connected) {
                 lami.call('saveSettings', payload)

@@ -108,6 +108,8 @@ void Bridge::handle(const QJsonObject &request)
         openUrl(id, params);
     } else if (method == "uninstall") {
         uninstall(id, params);
+    } else if (method == "listBackgrounds") {
+        listBackgrounds(id);
     } else if (method == "getSettings") {
         getSettings(id);
     } else if (method == "saveSettings") {
@@ -394,7 +396,20 @@ void Bridge::getSettings(int id)
         {"javaPath", s.value("javaPath").toString()},
         {"jvmArgs", s.value("jvmArgs").toString()},
         {"closeBehavior", s.value("closeBehavior").toString()},
+        {"accentColor", s.value("accentColor").toString()},
+        {"bgImage", s.value("bgImage").toString()},
     });
+}
+
+// Liste les images de fond disponibles (web/assets/backgrounds à côté de l'exe).
+void Bridge::listBackgrounds(int id)
+{
+    const QString dir = QCoreApplication::applicationDirPath() + "/web/assets/backgrounds";
+    QJsonArray out;
+    const QStringList filters{"*.png", "*.jpg", "*.jpeg", "*.webp", "*.gif"};
+    for (const QString &f : QDir(dir).entryList(filters, QDir::Files, QDir::Name))
+        out.append(f);
+    replyOk(id, QJsonObject{{"backgrounds", out}});
 }
 
 void Bridge::saveSettings(int id, const QJsonObject &params)
@@ -411,6 +426,10 @@ void Bridge::saveSettings(int id, const QJsonObject &params)
         s["jvmArgs"] = params.value("jvmArgs").toString();
     if (params.contains("closeBehavior"))
         s["closeBehavior"] = params.value("closeBehavior").toString();
+    if (params.contains("accentColor"))
+        s["accentColor"] = params.value("accentColor").toString().trimmed();
+    if (params.contains("bgImage"))
+        s["bgImage"] = params.value("bgImage").toString();
 
     QDir().mkpath(config::defaultDataRoot());
     QFile f(settingsPath());

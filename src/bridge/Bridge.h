@@ -56,6 +56,7 @@ private:
     void openUrl(int id, const QJsonObject &params);
     void uninstall(int id, const QJsonObject &params);
     void getSettings(int id);
+    void listBackgrounds(int id);
     void saveSettings(int id, const QJsonObject &params);
     void publishServer(int id, const QJsonObject &params);
     void editServer(int id, const QJsonObject &params);
