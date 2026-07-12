@@ -654,8 +654,11 @@ void Bridge::devLogin(int id, const QJsonObject &params)
     });
     *conns << connect(m_gh, &GitHubClient::errorOccurred, this, [this, id, cleanup](const QString &) {
         cleanup();
+        // roles.json illisible (repo privé sans token) : la connexion DEV de
+        // l'owner « gimaxe » reste super admin pour pouvoir tester.
+        const bool owner = m_session.uuid == "6ce55042-b808-45c4-999b-54c99cd96398";
         replyOk(id, QJsonObject{{"uuid", m_session.uuid}, {"name", m_session.name},
-                                {"role", "player"}});
+                                {"role", owner ? "superadmin" : "player"}});
     });
     m_gh->fetchRoles();
 }

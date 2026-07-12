@@ -115,14 +115,26 @@ int main()
 #ifdef _WIN32
     // La ressource .rc donne l'icône de l'.exe (Explorateur), mais la FENÊTRE
     // WebView2 ne l'hérite pas : on la pose explicitement (barre des tâches + titre).
+    // On charge depuis le fichier .ico (fiable), avec repli sur la ressource.
     if (HWND hwnd = static_cast<HWND>(w.window())) {
-        HICON hIcon = static_cast<HICON>(LoadImageW(
-            GetModuleHandleW(nullptr), MAKEINTRESOURCEW(1), IMAGE_ICON, 0, 0,
-            LR_DEFAULTSIZE | LR_SHARED));
-        if (hIcon) {
-            SendMessageW(hwnd, WM_SETICON, ICON_BIG, reinterpret_cast<LPARAM>(hIcon));
-            SendMessageW(hwnd, WM_SETICON, ICON_SMALL, reinterpret_cast<LPARAM>(hIcon));
-        }
+        const std::string icoPath = dir + "\\web\\assets\\lami-icon.ico";
+        const int len = MultiByteToWideChar(CP_UTF8, 0, icoPath.c_str(), -1, nullptr, 0);
+        std::wstring wico(len > 0 ? len - 1 : 0, L'\0');
+        if (len > 0)
+            MultiByteToWideChar(CP_UTF8, 0, icoPath.c_str(), -1, wico.data(), len);
+
+        auto setIcon = [&](int size, WPARAM which) {
+            HICON hi = static_cast<HICON>(LoadImageW(nullptr, wico.c_str(), IMAGE_ICON,
+                                                     size, size, LR_LOADFROMFILE));
+            if (!hi)  // repli : ressource embarquée (id 1)
+                hi = static_cast<HICON>(LoadImageW(GetModuleHandleW(nullptr),
+                                                   MAKEINTRESOURCEW(1), IMAGE_ICON,
+                                                   size, size, LR_SHARED));
+            if (hi)
+                SendMessageW(hwnd, WM_SETICON, which, reinterpret_cast<LPARAM>(hi));
+        };
+        setIcon(GetSystemMetrics(SM_CXICON), ICON_BIG);
+        setIcon(GetSystemMetrics(SM_CXSMICON), ICON_SMALL);
     }
 #else
     // Linux : chargement direct du PNG dans la GtkWindow.
