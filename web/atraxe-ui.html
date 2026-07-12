@@ -240,7 +240,7 @@
         <div class="flex-1 overflow-y-auto p-8 flex flex-col" id="content-area">
             
             <!-- ================= ONGLET : REJOINDRE ================= -->
-            <div id="tab-content-rejoindre" class="tab-panel flex flex-col gap-6 max-w-4xl mx-auto w-full h-full">
+            <div id="tab-content-rejoindre" class="tab-panel flex flex-col gap-6 max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto w-full h-full">
                 
                 <!-- Barre de recherche (Sera masquée automatiquement pour les serveurs installés) -->
                 <div id="search-bar-container" class="bg-neutral-950/40 p-1.5 rounded-2xl border border-neutral-800/60 flex items-center gap-3 shadow-inner">
@@ -514,7 +514,7 @@
             </div>
 
             <!-- ================= ONGLET : PUBLIER UN SERVEUR ================= -->
-            <div id="tab-content-publier" class="tab-panel hidden flex-col gap-6 max-w-3xl mx-auto w-full">
+            <div id="tab-content-publier" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl mx-auto w-full">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
                     <h2 class="text-xl font-black text-white">Publier un serveur de jeu</h2>
@@ -693,7 +693,7 @@
             </div>
 
             <!-- ================= ONGLET : MODIFIER UN SERVEUR (CLONE EXACT DE PUBLIER) ================= -->
-            <div id="tab-content-modifier" class="tab-panel hidden flex-col gap-6 max-w-3xl mx-auto w-full animate-fade-in">
+            <div id="tab-content-modifier" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl mx-auto w-full animate-fade-in">
                 
                 <div class="flex items-center gap-3 pb-2 border-b border-neutral-800">
                     <button onclick="switchTab('mes-publications')" class="p-1 rounded bg-neutral-950/60 border border-neutral-800 hover:border-brand hover:text-brand transition-all cursor-pointer" title="Retour aux publications">
@@ -864,7 +864,7 @@
             </div>
 
             <!-- ================= ONGLET : MES PUBLICATIONS ================= -->
-            <div id="tab-content-mes-publications" class="tab-panel hidden flex-col gap-6 max-w-5xl mx-auto w-full">
+            <div id="tab-content-mes-publications" class="tab-panel hidden flex-col gap-6 max-w-5xl 2xl:max-w-7xl mx-auto w-full">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
                     <h2 class="text-xl font-black text-white">Mes serveurs publiés</h2>
@@ -878,7 +878,7 @@
             </div>
 
             <!-- ================= ONGLET : ADMINISTRATION ================= -->
-            <div id="tab-content-admin" class="tab-panel hidden flex-col gap-6 max-w-4xl mx-auto w-full">
+            <div id="tab-content-admin" class="tab-panel hidden flex-col gap-6 max-w-4xl 2xl:max-w-5xl mx-auto w-full">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
                     <h2 class="text-xl font-black text-white">Administration du Launcher (LAMI)</h2>
@@ -958,7 +958,7 @@
             </div>
 
             <!-- ================= ONGLET : SKINS ================= -->
-            <div id="tab-content-skins" class="tab-panel hidden flex-col gap-6 max-w-4xl mx-auto w-full animate-fade-in">
+            <div id="tab-content-skins" class="tab-panel hidden flex-col gap-6 max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto w-full animate-fade-in">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
                     <h2 class="text-xl font-black text-white">Gestionnaire de Skins 3D</h2>
@@ -1031,7 +1031,7 @@
             </div>
 
             <!-- ================= ONGLET : RÉGLAGES ================= -->
-            <div id="tab-content-reglages" class="tab-panel hidden flex-col gap-6 max-w-3xl mx-auto w-full">
+            <div id="tab-content-reglages" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl mx-auto w-full">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
                     <h2 class="text-xl font-black text-white">Réglages du Launcher</h2>
@@ -1253,7 +1253,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.27.0";
+        const LAMI_VERSION = "0.28.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
