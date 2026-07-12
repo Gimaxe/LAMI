@@ -884,8 +884,9 @@ void Bridge::publishServer(int id, const QJsonObject &params)
     }
 }
 
-// Modifie les métadonnées d'un serveur (nom, adresse, version, loader, mot de
-// passe) SANS toucher aux mods/plugins/etc déjà publiés (ils sont préservés).
+// Modifie un serveur : métadonnées (nom, adresse, version, loader, mot de passe)
+// ET, si fourni, les assets — un zip par catégorie REMPLACE cette catégorie, un
+// drapeau clear<Cat> la vide. Les catégories non touchées sont préservées.
 void Bridge::editServer(int id, const QJsonObject &params)
 {
     if (!m_session.valid) {
@@ -906,8 +907,7 @@ void Bridge::editServer(int id, const QJsonObject &params)
         gh->deleteLater();
     };
 
-    // 1) Lit le manifeste actuel (pour préserver les assets), 2) applique les
-    // champs fournis, 3) réécrit, 4) met à jour l'index d'adresse.
+    // 1) Lit le manifeste actuel (pour préserver les assets non touchés).
     *conns << connect(gh, &GitHubClient::serverFetched, this,
                       [this, id, gh, params, serverId, cleanup, conns](const ServerInfo &cur) {
         ServerInfo s = cur;   // conserve mods/plugins/resourcepacks/shaders
@@ -917,13 +917,53 @@ void Bridge::editServer(int id, const QJsonObject &params)
         if (!strOf("version").isEmpty()) s.minecraftVersion = strOf("version");
         if (!strOf("loader").isEmpty())  s.loader = strOf("loader").toLower();
         if (params.contains("loaderVersion")) s.loaderVersion = params.value("loaderVersion").toString();
-        // Mot de passe : modifié seulement si le champ a été touché (passwordChanged).
         if (params.value("passwordChanged").toBool()) {
             const QString pwd = params.value("password").toString();
             s.passwordHash = pwd.isEmpty() ? QString() : sha256Hex(pwd);
         }
 
-        // Après écriture du manifeste → index (ou réponse directe si pas d'adresse).
+        // Catégories vidées explicitement par l'utilisateur.
+        const QHash<QString, QString> clearFlag{
+            {assets::Mods, "clearMods"}, {assets::Plugins, "clearPlugins"},
+            {assets::ResourcePacks, "clearPacks"}, {assets::Shaders, "clearShaders"}};
+        for (auto it = clearFlag.begin(); it != clearFlag.end(); ++it)
+            if (params.value(it.value()).toBool())
+                s.assetList(it.key()).clear();
+
+        // Nouveaux zips fournis (base64) → écrits en temp, remplaceront la catégorie.
+        const QString tmpBase = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+        const QHash<QString, QString> zipParam{
+            {assets::Mods, "modsZip"}, {assets::Plugins, "pluginsZip"},
+            {assets::ResourcePacks, "packsZip"}, {assets::Shaders, "shadersZip"}};
+        QHash<QString, QString> zips;
+        for (auto it = zipParam.begin(); it != zipParam.end(); ++it) {
+            const QString b64 = params.value(it.value()).toString();
+            if (b64.isEmpty()) continue;
+            const QString tmpZip = QDir(tmpBase).filePath("lami-edit-" + serverId + "-" + it.key() + ".zip");
+            QFile f(tmpZip);
+            if (!f.open(QIODevice::WriteOnly)) { cleanup(); replyError(id, "Écriture temporaire impossible."); return; }
+            f.write(QByteArray::fromBase64(b64.toUtf8())); f.close();
+            zips.insert(it.key(), tmpZip);
+        }
+
+        // Cas avec nouveaux fichiers → Publisher (upload + manifeste + index).
+        if (!zips.isEmpty()) {
+            // On retire nos handlers sur gh : Publisher pilote gh à partir d'ici
+            // (évite un double-déclenchement sur writeError/errorOccurred).
+            for (const auto &c : *conns) QObject::disconnect(c);
+            conns->clear();
+            auto *pub = new Publisher(gh, this);
+            auto pcleanup = [gh, pub]() { pub->deleteLater(); gh->deleteLater(); };
+            connect(pub, &Publisher::published, this, [this, id, serverId, pcleanup](const QString &) {
+                pcleanup(); replyOk(id, QJsonObject{{"id", serverId}, {"edited", true}});
+            });
+            connect(pub, &Publisher::denied,  this, [this, id, pcleanup](const QString &e) { pcleanup(); replyError(id, e); });
+            connect(pub, &Publisher::failed,  this, [this, id, pcleanup](const QString &e) { pcleanup(); replyError(id, e); });
+            pub->publishFromZips(s, zips, m_session.uuid);
+            return;
+        }
+
+        // Cas métadonnées / vidage seul → écriture directe du manifeste + index.
         *conns << connect(gh, &GitHubClient::filePut, this,
                           [this, id, gh, s, serverId, cleanup](const QString &) {
             if (s.address.isEmpty()) { cleanup(); replyOk(id, QJsonObject{{"id", serverId}, {"edited", true}}); return; }
@@ -931,8 +971,7 @@ void Bridge::editServer(int id, const QJsonObject &params)
         });
         *conns << connect(gh, &GitHubClient::indexUpdated, this,
                           [this, id, serverId, cleanup]() {
-            cleanup();
-            replyOk(id, QJsonObject{{"id", serverId}, {"edited", true}});
+            cleanup(); replyOk(id, QJsonObject{{"id", serverId}, {"edited", true}});
         });
         gh->putFile("servers/" + s.id + ".json",
                     QJsonDocument(serverToJson(s)).toJson(QJsonDocument::Indented),

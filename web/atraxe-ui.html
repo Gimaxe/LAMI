@@ -1196,7 +1196,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.18.0";
+        const LAMI_VERSION = "0.19.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1218,6 +1218,7 @@
         let pendingPasswordCb = null;   // callback quand le mot de passe est validé
         let pendingPasswordServer = null;
         let serverPasswords = {};       // id serveur -> mot de passe (mémorisé pour la session)
+        let deletingServers = new Set(); // ids en cours de suppression (état chargement)
         let currentlySelectedServer = null;
         let runningId = null;   // id du serveur dont le jeu tourne
         let updateUrl = '';     // URL de la dernière release (si mise à jour dispo)
@@ -3297,8 +3298,14 @@
                         </div>
                     </div>
 
-                    <!-- Boutons d'Action à droite -->
+                    <!-- Boutons d'Action à droite (ou état « suppression en cours ») -->
                     <div class="flex items-center gap-2 justify-end flex-shrink-0">
+                        ${deletingServers.has(srv.id) ? `
+                        <span class="flex items-center gap-2 text-xs text-red-400 font-bold px-3 py-2">
+                            <i data-lucide="loader" class="w-3.5 h-3.5 animate-spin"></i>
+                            <span>Suppression…</span>
+                        </span>
+                        ` : `
                         <button onclick="openEditConfigPage('${srv.id}')" class="px-3 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-850 hover:border-neutral-700 text-neutral-300 font-bold rounded-xl text-xs transition duration-150 flex items-center gap-1 cursor-pointer">
                             <i data-lucide="edit-3" class="w-3.5 h-3.5 text-brand"></i>
                             <span>Modifier</span>
@@ -3307,8 +3314,10 @@
                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                             <span>Supprimer</span>
                         </button>
+                        `}
                     </div>
                 `;
+                if (deletingServers.has(srv.id)) row.classList.add('opacity-60', 'pointer-events-none');
                 container.appendChild(row);
             });
 
@@ -3371,10 +3380,18 @@
 
             const srvId = document.getElementById('edit-srv-real-id').value;
 
-            // Backend réel : modifie les métadonnées (mods/plugins préservés).
+            // Backend réel : métadonnées + éventuels changements de fichiers.
             if (window.lami && window.lami.connected) {
                 const pwd = document.getElementById('edit-password').value;
-                lami.call('editServer', {
+                // Labels par défaut = « aucun fichier ». Un nouveau fichier remplace la
+                // catégorie ; label par défaut sans fichier = catégorie vidée.
+                const cats = [
+                    { key: 'mods',   zip: 'modsZip',    clear: 'clearMods',   def: 'Dossier des Mods (.zip, .7z)' },
+                    { key: 'plugins',zip: 'pluginsZip', clear: 'clearPlugins',def: 'Plugins Serveur (.zip, .7z)' },
+                    { key: 'packs',  zip: 'packsZip',   clear: 'clearPacks',  def: 'Texture Packs / Packs de ressource (.zip, .7z)' },
+                    { key: 'shaders',zip: 'shadersZip', clear: 'clearShaders',def: 'Shaders Graphiques (.zip, .7z)' }
+                ];
+                const meta = {
                     id: srvId,
                     name: document.getElementById('edit-name').value,
                     ip: document.getElementById('edit-ip').value,
@@ -3382,6 +3399,16 @@
                     loader: document.getElementById('edit-loader').value,
                     password: pwd,
                     passwordChanged: pwd.length > 0
+                };
+                Promise.all(cats.map(function (c) {
+                    const file = document.getElementById('file-edit-' + c.key).files[0];
+                    if (file) return fileToBase64(file).then(function (b64) { meta[c.zip] = b64; });
+                    const label = document.getElementById('label-edit-' + c.key).innerText;
+                    if (label === c.def) meta[c.clear] = true;   // vidée
+                    return Promise.resolve();
+                })).then(function () {
+                    showToast('Enregistrement…', 'info');
+                    return lami.call('editServer', meta);
                 }).then(function () {
                     showToast('Serveur mis à jour.', 'success');
                     refreshServersFromBackend();
@@ -3451,13 +3478,18 @@
             if (window.lami && window.lami.connected) {
                 const srv = (catalog || []).find(s => s.id === serverId);
                 const name = srv ? srv.name : serverId;
+                if (deletingServers.has(serverId)) return;   // déjà en cours
                 if (!confirm(`Supprimer définitivement le serveur « ${name} » ?`)) return;
-                showToast('Suppression…', 'info');
+                deletingServers.add(serverId);
+                renderUserPublishedServers();   // affiche l'état « Suppression… » verrouillé
                 lami.call('deleteServer', { id: serverId }).then(function () {
                     showToast(`Le serveur "${name}" a été définitivement supprimé.`, 'success');
                     if (currentlySelectedServer && currentlySelectedServer.id === serverId) goBackToSearch();
+                    deletingServers.delete(serverId);
                     refreshServersFromBackend();   // recharge catalogue + rendus
                 }).catch(function (err) {
+                    deletingServers.delete(serverId);
+                    renderUserPublishedServers();
                     showToast('Suppression échouée : ' + (err.message || err), 'error');
                 });
                 return;
