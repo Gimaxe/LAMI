@@ -77,7 +77,6 @@ QJsonObject serverToJson(const ServerInfo &s)
         {"plugins", assetArray(s.plugins)},
         {"resourcepacks", assetArray(s.resourcePacks)},
         {"shaders", assetArray(s.shaders)},
-        {"password_hash", s.passwordHash},   // haché ; jamais le mot de passe en clair
     };
 }
 

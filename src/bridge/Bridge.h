@@ -45,7 +45,6 @@ private:
     void listInstalled(int id);
     void login(int id);
     void devLogin(int id, const QJsonObject &params);   // PROVISOIRE (avant approbation Azure)
-    void checkPassword(int id, const QJsonObject &params);
     void startDownload(int id, const QJsonObject &params);
     void launch(int id, const QJsonObject &params);
     void stopGame(int id, const QJsonObject &params);

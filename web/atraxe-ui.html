@@ -312,20 +312,6 @@
                         </div>
                     </div>
 
-                    <!-- BLOC DE SÉCURITÉ PAR MOT DE PASSE (S'affiche si le serveur requiert un mdp) -->
-                    <div id="srv-password-container" class="hidden bg-red-500/5 border border-red-500/25 p-5 rounded-2xl flex-col gap-3">
-                        <div class="flex items-center gap-2.5 text-red-400">
-                            <i data-lucide="lock" class="w-5 h-5"></i>
-                            <span class="text-xs font-bold uppercase tracking-wider">Serveur protégé par mot de passe</span>
-                        </div>
-                        <div class="flex flex-col sm:flex-row gap-3">
-                            <input type="password" id="srv-password-input" placeholder="Entrez le mot de passe..." class="flex-1 bg-neutral-900 hover:bg-neutral-850 transition border border-neutral-800 rounded-xl px-4 py-2.5 text-sm text-white outline-none focus:border-red-500/50">
-                            <button onclick="validateServerPassword()" class="bg-red-900/60 hover:bg-red-800/80 border border-red-500/30 text-white font-bold px-6 py-2.5 rounded-xl text-xs transition-all flex items-center justify-center gap-2">
-                                <i data-lucide="unlock" class="w-4 h-4"></i>
-                                <span>Vérifier</span>
-                            </button>
-                        </div>
-                    </div>
 
                     <!-- Pied de Fiche : Lancement du Jeu ou Actions d'Installation -->
                     <div id="server-action-box" class="bg-neutral-900/40 border border-neutral-800 rounded-2xl p-6 flex flex-col gap-4 mt-2">
@@ -578,21 +564,6 @@
                         </div>
                     </div>
 
-                    <!-- Options de Sécurité (Mot de Passe) -->
-                    <div class="bg-neutral-950/20 border border-neutral-800/80 p-5 rounded-2xl flex flex-col gap-3">
-                        <div class="flex items-center gap-2">
-                            <i data-lucide="shield-check" class="w-5 h-5 text-brand"></i>
-                            <span class="text-xs font-bold uppercase tracking-wider">Sécurité d'accès</span>
-                        </div>
-                        <div class="flex flex-col gap-1.5 max-w-md">
-                            <label class="text-xs text-neutral-400">Mot de passe du serveur (Optionnel)</label>
-                            <div class="relative">
-                                <input type="password" id="pub-password" placeholder="Laisser vide si public..." class="w-full bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl pl-10 pr-4 py-3 text-sm text-white outline-none transition">
-                                <i data-lucide="key" class="w-4 h-4 text-neutral-500 absolute left-3.5 top-3.5"></i>
-                            </div>
-                        </div>
-                    </div>
-
                     <!-- Fichiers d'installation avec boutons d'annulation individuels -->
                     <div class="flex flex-col gap-1 mb-1">
                         <h3 class="text-sm font-black text-white">Contenu à synchroniser</h3>
@@ -765,21 +736,6 @@
                                     <option value="Magma">Magma</option>
                                 </optgroup>
                             </select>
-                        </div>
-                    </div>
-
-                    <!-- Options de Sécurité (Mot de Passe) -->
-                    <div class="bg-neutral-950/20 border border-neutral-800/80 p-5 rounded-2xl flex flex-col gap-3">
-                        <div class="flex items-center gap-2">
-                            <i data-lucide="shield-check" class="w-5 h-5 text-brand"></i>
-                            <span class="text-xs font-bold uppercase tracking-wider">Sécurité d'accès</span>
-                        </div>
-                        <div class="flex flex-col gap-1.5 max-w-md">
-                            <label class="text-xs text-neutral-400">Mot de passe du serveur (Optionnel)</label>
-                            <div class="relative">
-                                <input type="password" id="edit-password" placeholder="Laisser vide si public..." class="w-full bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl pl-10 pr-4 py-3 text-sm text-white outline-none transition">
-                                <i data-lucide="key" class="w-4 h-4 text-neutral-500 absolute left-3.5 top-3.5"></i>
-                            </div>
                         </div>
                     </div>
 
@@ -1253,30 +1209,10 @@
         </div>
     </div>
 
-    <!-- Mot de passe serveur (demandé au moment d'installer un serveur protégé) -->
-    <div id="password-modal" class="hidden fixed inset-0 z-[115] flex items-center justify-center bg-neutral-950/90 backdrop-blur-sm">
-        <div class="bg-dark-card border border-brand-500/30 rounded-3xl p-8 max-w-sm w-full mx-4 flex flex-col gap-5 shadow-2xl">
-            <div class="flex flex-col items-center gap-3 text-center">
-                <div class="w-14 h-14 bg-brand/15 border border-brand/30 rounded-2xl flex items-center justify-center text-brand-500">
-                    <i data-lucide="lock" class="w-7 h-7"></i>
-                </div>
-                <div>
-                    <h2 class="text-xl font-black text-white">Serveur protégé</h2>
-                    <p id="password-modal-sub" class="text-sm text-neutral-400 mt-2">Entrez le mot de passe pour installer ce serveur.</p>
-                </div>
-            </div>
-            <input type="password" id="password-modal-input" placeholder="Mot de passe" autocomplete="off" onkeydown="if(event.key==='Enter')submitServerPassword()" class="bg-dark-input border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-brand w-full">
-            <p id="password-modal-error" class="hidden text-xs text-red-400 -mt-2"></p>
-            <div class="flex gap-3">
-                <button onclick="closeServerPassword()" class="flex-1 py-3 px-4 bg-neutral-800 hover:bg-neutral-700 text-white font-bold rounded-xl transition-all">Annuler</button>
-                <button id="password-modal-submit" onclick="submitServerPassword()" class="flex-1 py-3 px-4 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl transition-all">Installer</button>
-            </div>
-        </div>
-    </div>
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.29.0";
+        const LAMI_VERSION = "0.30.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1292,12 +1228,8 @@
             progress: 0,
             statusText: '',
             intervalId: null,
-            serverObj: null,
-            password: ''
+            serverObj: null
         };
-        let pendingPasswordCb = null;   // callback quand le mot de passe est validé
-        let pendingPasswordServer = null;
-        let serverPasswords = {};       // id serveur -> mot de passe (mémorisé pour la session)
         let deletingServers = new Set(); // ids en cours de suppression (état chargement)
         let currentlySelectedServer = null;
         let runningId = null;   // id du serveur dont le jeu tourne
@@ -2412,9 +2344,7 @@
                 mods: s.mods || [],
                 plugins: s.plugins || [],
                 resourcePacks: s.resourcePacks || [],
-                shaders: s.shaders || [],
-                password: s.password || '',
-                hasPassword: !!s.hasPassword   // serveur protégé (mdp demandé à l'install)
+                shaders: s.shaders || []
             };
         }
 
@@ -2446,10 +2376,6 @@
             document.getElementById('installed-server-dashboard').classList.add('hidden');
             document.getElementById('server-card-preview').classList.add('hidden');
             document.getElementById('search-server-input').value = '';
-            
-            // Masquer le container mot de passe au cas où
-            document.getElementById('srv-password-container').classList.add('hidden');
-            document.getElementById('srv-password-input').value = '';
         }
 
         function selectServer(server) {
@@ -2498,39 +2424,7 @@
                 document.getElementById('srv-mods').innerText = `${totalFiles} fichiers synchronisés`;
                 document.getElementById('srv-logo').innerText = server.name.substring(0, 2).toUpperCase();
 
-                // Gestion de la sécurité par mot de passe
-                const pwdContainer = document.getElementById('srv-password-container');
-                if (server.password && server.password !== '') {
-                    pwdContainer.classList.remove('hidden');
-                    pwdContainer.classList.add('flex');
-                    // On masque le bloc de téléchargement tant que non validé
-                    document.getElementById('server-action-box').innerHTML = `
-                        <div class="text-center p-4 bg-neutral-950/40 rounded-xl border border-neutral-800 text-xs text-neutral-500 font-semibold leading-relaxed flex items-center justify-center gap-2">
-                            <i data-lucide="lock" class="w-4 h-4 text-red-400"></i>
-                            <span>Veuillez entrer le mot de passe requis pour déverrouiller l'accès.</span>
-                        </div>
-                    `;
-                    lucide.createIcons();
-                } else {
-                    pwdContainer.classList.add('hidden');
-                    renderServerActionBox();
-                }
-            }
-        }
-
-        function validateServerPassword() {
-            const pwdInput = document.getElementById('srv-password-input');
-            if (!pwdInput || !currentlySelectedServer) return;
-
-            const entered = pwdInput.value;
-            if (entered === currentlySelectedServer.password) {
-                showToast("Accès au serveur validé !", "success");
-                // Masquer le container mot de passe
-                document.getElementById('srv-password-container').classList.add('hidden');
-                // Déverrouiller et afficher le bloc d'installation standard
                 renderServerActionBox();
-            } else {
-                showToast("Mot de passe incorrect. Accès refusé.", "error");
             }
         }
 
@@ -2574,61 +2468,7 @@
         }
 
         // --- GESTION DES TÉLÉCHARGEMENTS ET INSTALLATIONS ---
-        // Ouvre la modale de mot de passe ; cb(pwd) est appelé si l'utilisateur valide.
-        function promptServerPassword(srv, cb) {
-            pendingPasswordCb = cb;
-            pendingPasswordServer = srv;
-            const modal = document.getElementById('password-modal');
-            const input = document.getElementById('password-modal-input');
-            const sub = document.getElementById('password-modal-sub');
-            const err = document.getElementById('password-modal-error');
-            if (sub) sub.innerText = 'Entrez le mot de passe pour installer « ' + srv.name + ' ».';
-            if (err) err.classList.add('hidden');
-            if (input) input.value = '';
-            if (modal) { modal.classList.remove('hidden'); }
-            if (window.lucide) lucide.createIcons();
-            if (input) setTimeout(function () { input.focus(); }, 50);
-        }
-        function closeServerPassword() {
-            pendingPasswordCb = null;
-            const modal = document.getElementById('password-modal');
-            if (modal) modal.classList.add('hidden');
-        }
-        function submitServerPassword() {
-            const input = document.getElementById('password-modal-input');
-            const btn = document.getElementById('password-modal-submit');
-            const err = document.getElementById('password-modal-error');
-            const pwd = input ? input.value : '';
-            if (!pwd) {
-                if (err) { err.innerText = 'Mot de passe requis.'; err.classList.remove('hidden'); }
-                return;
-            }
-            const srv = pendingPasswordServer;
-            if (!srv || !window.lami || !window.lami.connected) {
-                // Pas de backend : on ne peut pas vérifier, on laisse passer.
-                const cb = pendingPasswordCb; closeServerPassword(); if (cb) cb(pwd); return;
-            }
-            // Vérifie le mot de passe AVANT de fermer la popup (sans rien télécharger).
-            if (err) err.classList.add('hidden');
-            if (btn) { btn.disabled = true; btn.classList.add('opacity-50', 'cursor-not-allowed'); }
-            lami.call('checkPassword', { id: srv.id, password: pwd }).then(function (r) {
-                if (btn) { btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed'); }
-                if (r && r.ok) {
-                    const cb = pendingPasswordCb;
-                    closeServerPassword();
-                    if (cb) cb(pwd);
-                } else {
-                    // Incorrect : on RESTE sur la popup et on affiche l'erreur.
-                    if (err) { err.innerText = 'Mot de passe incorrect.'; err.classList.remove('hidden'); }
-                    if (input) { input.value = ''; input.focus(); }
-                }
-            }).catch(function (e) {
-                if (btn) { btn.disabled = false; btn.classList.remove('opacity-50', 'cursor-not-allowed'); }
-                if (err) { err.innerText = 'Vérification impossible : ' + (e.message || e); err.classList.remove('hidden'); }
-            });
-        }
-
-        function startDownload(serverId, password) {
+        function startDownload(serverId) {
             if (activeDownload.serverId !== null) {
                 showToast("Un téléchargement est déjà actif. Veuillez l'annuler d'abord.", "error");
                 return;
@@ -2642,14 +2482,6 @@
                 showToast("Erreur: Serveur introuvable.", "error");
                 return;
             }
-
-            // Serveur protégé : on demande le mot de passe avant d'installer.
-            if (srv.hasPassword && (password === undefined || password === null)) {
-                promptServerPassword(srv, function (pwd) { startDownload(serverId, pwd); });
-                return;
-            }
-            activeDownload.password = password || '';
-            if (srv.hasPassword) serverPasswords[srv.id] = password || '';
 
             activeDownload.serverId = srv.id;
             activeDownload.progress = 0;
@@ -2670,7 +2502,7 @@
 
             // Téléchargement RÉEL via le backend (progression par événements).
             if (window.lami && window.lami.connected) {
-                lami.call('startDownload', { id: srv.id, password: activeDownload.password || '' }).catch(function (err) {
+                lami.call('startDownload', { id: srv.id }).catch(function (err) {
                     showToast("Téléchargement échoué : " + err.message, "error");
                     resetDownloadState();
                     renderServersSidebar();
@@ -3182,7 +3014,6 @@
             const srvVersion = selectedVersion('pub-version');
             const srvLoader = document.getElementById('pub-loader').value;
             const srvLoaderVersion = selectedVersion('pub-loader-version');
-            const srvPassword = document.getElementById('pub-password').value;
 
             // Récupérer s'il y a des mods ou d'autres fichiers liés
             const modsFile = document.getElementById('file-pub-mods').files[0];
@@ -3197,7 +3028,7 @@
                 publishServerReal({
                     name: srvName, ip: srvIp, port: srvPort,
                     version: srvVersion, loader: srvLoader,
-                    loaderVersion: srvLoaderVersion, password: srvPassword
+                    loaderVersion: srvLoaderVersion
                 }, { mods: modsFile, plugins: pFile, packs: tFile, shaders: sFile });
                 return;
             }
@@ -3318,7 +3149,6 @@
                 return lami.call('publishServer', {
                     name: meta.name, ip: meta.ip, port: meta.port,
                     version: meta.version, loader: meta.loader, loaderVersion: meta.loaderVersion || '',
-                    password: meta.password || '',   // haché côté backend (jamais en clair)
                     modsZip: b64[0], pluginsZip: b64[1], packsZip: b64[2], shadersZip: b64[3]
                 });
             }).then(function () {
@@ -3436,8 +3266,6 @@
             loaderSelect.value = cleanLoaderName;
             if (!loaderSelect.value) loaderSelect.value = "Vanilla";
 
-            document.getElementById('edit-password').value = srv.password || "";
-
             // Nettoyage visuel préalable des fichiers édités (en mode silencieux pour ne pas spammer d'alertes)
             clearUploadedFile(null, 'file-edit-mods', 'label-edit-mods', 'Dossier des Mods (.zip, .7z)', 'btn-del-edit-mods', true);
             clearUploadedFile(null, 'file-edit-plugins', 'label-edit-plugins', 'Plugins Serveur (.zip, .7z)', 'btn-del-edit-plugins', true);
@@ -3474,7 +3302,6 @@
 
             // Backend réel : métadonnées + éventuels changements de fichiers.
             if (window.lami && window.lami.connected) {
-                const pwd = document.getElementById('edit-password').value;
                 // Labels par défaut = « aucun fichier ». Un nouveau fichier remplace la
                 // catégorie ; label par défaut sans fichier = catégorie vidée.
                 const cats = [
@@ -3488,9 +3315,7 @@
                     name: document.getElementById('edit-name').value,
                     ip: document.getElementById('edit-ip').value,
                     version: document.getElementById('edit-version').value,
-                    loader: document.getElementById('edit-loader').value,
-                    password: pwd,
-                    passwordChanged: pwd.length > 0
+                    loader: document.getElementById('edit-loader').value
                 };
                 Promise.all(cats.map(function (c) {
                     const file = document.getElementById('file-edit-' + c.key).files[0];
@@ -3519,7 +3344,6 @@
                 srv.port = document.getElementById('edit-port').value;
                 srv.version = document.getElementById('edit-version').value;
                 srv.loader = document.getElementById('edit-loader').value;
-                srv.password = document.getElementById('edit-password').value;
 
                 // Mettre à jour les fichiers de simulation s'ils ont été modifiés/remplacés
                 const labelMods = document.getElementById('label-edit-mods').innerText;

@@ -54,13 +54,6 @@ public:
     // Idem mais résout d'abord l'adresse (IP/sous-domaine) via servers/index.json.
     void planByAddress(const QString &address, const MinecraftSession &session);
 
-    // Mot de passe fourni par le joueur (vérifié contre le hash du serveur).
-    void setPassword(const QString &password) { m_password = password; }
-
-    // Active/désactive la vérification du mot de passe (activée par défaut).
-    // Le lancement d'un serveur DÉJÀ installé la désactive (mdp demandé à l'install).
-    void setVerifyPassword(bool on) { m_verifyPassword = on; }
-
     // Force l'utilisation du java fourni (javaPath) au lieu de provisionner un JRE.
     void setForceJava(bool on) { m_forceJava = on; }
 
@@ -94,8 +87,6 @@ private:
     ForgeInstaller  *m_forge;     // installeur Forge/NeoForge (créé à la demande)
     QNetworkAccessManager *m_net;
     QString m_resolvedJavaPath;   // JRE provisionné (sinon repli sur m_javaPath)
-    QString m_password;           // mot de passe saisi par le joueur
-    bool    m_verifyPassword = true;  // vérifier le mdp ? (false au lancement installé)
     bool    m_forceJava = false;      // utiliser m_javaPath au lieu du JRE auto ?
     bool    m_forgeDone = false;  // profil Forge déjà fusionné ?
 

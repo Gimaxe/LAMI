@@ -2,7 +2,6 @@
 
 #include <QDir>
 #include <QFile>
-#include <QCryptographicHash>
 #include <QRegularExpression>
 #include <algorithm>
 #include <QJsonArray>
@@ -28,13 +27,6 @@
 
 namespace lami {
 
-// SHA-256 hex d'une chaîne (mot de passe).
-static QString sha256Hex(const QString &s)
-{
-    return QString::fromLatin1(
-        QCryptographicHash::hash(s.toUtf8(), QCryptographicHash::Sha256).toHex());
-}
-
 static QJsonArray namesOf(const QVector<ModEntry> &list)
 {
     QJsonArray a;
@@ -58,7 +50,6 @@ QJsonObject serverToUiJson(const ServerInfo &s)
         {"plugins", namesOf(s.plugins)},
         {"resourcePacks", namesOf(s.resourcePacks)},
         {"shaders", namesOf(s.shaders)},
-        {"hasPassword", !s.passwordHash.isEmpty()},   // jamais le hash ni le mdp
         {"installed", false},
     };
 }
@@ -92,8 +83,6 @@ void Bridge::handle(const QJsonObject &request)
         login(id);
     } else if (method == "devLogin") {
         devLogin(id, params);
-    } else if (method == "checkPassword") {
-        checkPassword(id, params);
     } else if (method == "startDownload") {
         startDownload(id, params);
     } else if (method == "launch") {
@@ -613,42 +602,6 @@ void Bridge::login(int id)
     m_auth->start();
 }
 
-// Vérifie un mot de passe SANS rien télécharger : récupère le manifeste du
-// serveur et compare le hash. Permet à l'UI de garder la popup ouverte tant
-// que le mot de passe est incorrect.
-void Bridge::checkPassword(int id, const QJsonObject &params)
-{
-    const QString serverId = params.value("id").toString().trimmed();
-    const QString pwd = params.value("password").toString();
-    if (serverId.isEmpty()) { replyError(id, "Identifiant de serveur manquant."); return; }
-
-    auto *gh = new GitHubClient(config::owner(), config::repo(), config::branch(), this);
-    if (!config::token().isEmpty())
-        gh->setToken(config::token());
-
-    auto conns = std::make_shared<QVector<QMetaObject::Connection>>();
-    auto cleanup = [conns, gh]() {
-        for (const auto &c : *conns) QObject::disconnect(c);
-        conns->clear();
-        gh->deleteLater();
-    };
-
-    *conns << connect(gh, &GitHubClient::serverFetched, this,
-                      [this, id, pwd, cleanup](const ServerInfo &s) {
-        const bool ok = s.passwordHash.isEmpty()
-                        || sha256Hex(pwd) == s.passwordHash;
-        cleanup();
-        replyOk(id, QJsonObject{{"ok", ok}});
-    });
-    *conns << connect(gh, &GitHubClient::errorOccurred, this,
-                      [this, id, cleanup](const QString &e) {
-        cleanup();
-        replyError(id, e);
-    });
-
-    gh->fetchServer(serverId);
-}
-
 void Bridge::resolveServer(int id, const QJsonObject &params)
 {
     const QString ip = params.value("ip").toString().trimmed();
@@ -720,7 +673,6 @@ void Bridge::startDownload(int id, const QJsonObject &params)
 
     auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
                                     config::token(), config::dataRoot(), config::javaPath(), this);
-    mgr->setPassword(params.value("password").toString());
     mgr->setForceJava(config::forceCustomJava());
 
     // Session neutre : le téléchargement des fichiers ne dépend pas de l'identité
@@ -780,9 +732,6 @@ void Bridge::launch(int id, const QJsonObject &params)
 
     auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
                                     config::token(), config::dataRoot(), config::javaPath(), this);
-    // Lancement d'un serveur déjà installé : pas de vérification de mot de passe
-    // (il a été demandé une seule fois, au moment de l'installation).
-    mgr->setVerifyPassword(false);
     mgr->setForceJava(config::forceCustomJava());
 
     // Session : la vraie si connecté (Microsoft approuvé), sinon un profil
@@ -900,10 +849,6 @@ void Bridge::publishServer(int id, const QJsonObject &params)
     srv.id               = params.value("id").toString().trimmed();
     if (srv.id.isEmpty())
         srv.id = slugify(srv.name);
-    // Mot de passe : on ne stocke QUE le hash (jamais le mot de passe en clair).
-    const QString pwd = params.value("password").toString();
-    if (!pwd.isEmpty())
-        srv.passwordHash = sha256Hex(pwd);
     srv.valid = true;
 
     if (srv.name.isEmpty() || srv.address.isEmpty() || srv.id.isEmpty()) {
@@ -997,10 +942,6 @@ void Bridge::editServer(int id, const QJsonObject &params)
         if (!strOf("version").isEmpty()) s.minecraftVersion = strOf("version");
         if (!strOf("loader").isEmpty())  s.loader = strOf("loader").toLower();
         if (params.contains("loaderVersion")) s.loaderVersion = params.value("loaderVersion").toString();
-        if (params.value("passwordChanged").toBool()) {
-            const QString pwd = params.value("password").toString();
-            s.passwordHash = pwd.isEmpty() ? QString() : sha256Hex(pwd);
-        }
 
         // Catégories vidées explicitement par l'utilisateur.
         const QHash<QString, QString> clearFlag{
