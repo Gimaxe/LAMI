@@ -87,6 +87,10 @@ inline QString javaPath()
 }
 // Arguments JVM additionnels saisis par l'utilisateur (chaîne brute).
 inline QString jvmArgs() { return readSettings().value("jvmArgs").toString(); }
+// URL du Worker de confiance (vide = écritures directes GitHub, comportement
+// actuel). Quand renseignée, les écritures passeront par le Worker (voir
+// worker/README.md). Prêt mais non branché tant que l'auth Microsoft n'est pas OK.
+inline QString workerUrl() { return readSettings().value("workerUrl").toString().trimmed(); }
 // Comportement de fermeture du launcher au lancement du jeu.
 inline QString closeBehavior() { return readSettings().value("closeBehavior").toString(); }
 // L'utilisateur veut-il forcer SON java (au lieu du JRE auto) ?

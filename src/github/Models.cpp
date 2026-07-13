@@ -77,6 +77,7 @@ QJsonObject serverToJson(const ServerInfo &s)
         {"plugins", assetArray(s.plugins)},
         {"resourcepacks", assetArray(s.resourcePacks)},
         {"shaders", assetArray(s.shaders)},
+        {"owner", s.owner},   // UUID du créateur (droits de modif/suppression)
     };
 }
 

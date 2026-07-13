@@ -48,6 +48,8 @@ ServerInfo parseServer(const QJsonObject &obj, const QString &fallbackId)
     }
 
 
+    s.owner = obj.value("owner").toString();
+
     // Un serveur est valide s'il a au moins un id et une version.
     s.valid = !s.id.isEmpty() && !s.minecraftVersion.isEmpty();
     return s;

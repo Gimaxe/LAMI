@@ -1,0 +1,12 @@
+name = "lami-worker"
+main = "src/index.js"
+compatibility_date = "2024-11-01"
+
+# Variables NON secrètes (le repo-BDD).
+[vars]
+GH_OWNER = "Gimaxe"
+GH_REPO = "LAMI-db"
+GH_BRANCH = "main"
+
+# Le secret GITHUB_TOKEN se pose HORS de ce fichier (jamais committé) :
+#   wrangler secret put GITHUB_TOKEN

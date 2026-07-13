@@ -849,6 +849,7 @@ void Bridge::publishServer(int id, const QJsonObject &params)
     srv.id               = params.value("id").toString().trimmed();
     if (srv.id.isEmpty())
         srv.id = slugify(srv.name);
+    srv.owner            = m_session.uuid;   // créateur = session authentifiée (jamais le JS)
     srv.valid = true;
 
     if (srv.name.isEmpty() || srv.address.isEmpty() || srv.id.isEmpty()) {
