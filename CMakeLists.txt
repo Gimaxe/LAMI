@@ -86,6 +86,7 @@ set_target_properties(lami PROPERTIES
 set(BRIDGE_CORE_SOURCES
     src/bridge/Bridge.cpp
     src/auth/MicrosoftAuth.cpp
+    src/auth/Secret.cpp
     src/github/Models.cpp
     src/github/GitHubClient.cpp
     src/sync/SyncManager.cpp
@@ -313,6 +314,24 @@ qt_add_executable(lami_backend
 target_include_directories(lami_backend PRIVATE src third_party/miniz)
 target_link_libraries(lami_backend PRIVATE
     Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::WebSockets)
+
+# Stockage sécurisé du refresh token (module Secret) :
+if(WIN32)
+    target_link_libraries(lami_backend PRIVATE crypt32)   # DPAPI
+elseif(UNIX AND NOT APPLE)
+    find_package(PkgConfig QUIET)
+    if(PkgConfig_FOUND)
+        pkg_check_modules(LIBSECRET QUIET libsecret-1)
+        if(LIBSECRET_FOUND)
+            target_compile_definitions(lami_backend PRIVATE LAMI_HAVE_LIBSECRET)
+            target_include_directories(lami_backend PRIVATE ${LIBSECRET_INCLUDE_DIRS})
+            target_link_libraries(lami_backend PRIVATE ${LIBSECRET_LIBRARIES})
+            message(STATUS "Secret : libsecret ${LIBSECRET_VERSION} (refresh token chiffré)")
+        else()
+            message(STATUS "Secret : libsecret absent -> repli fichier (installe libsecret-1-dev)")
+        endif()
+    endif()
+endif()
 
 # Copie le dossier web/ (UI + libs vendorisées) à côté des binaires (file://).
 add_custom_command(TARGET lami_backend POST_BUILD

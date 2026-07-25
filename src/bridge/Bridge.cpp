@@ -16,6 +16,7 @@
 #include <memory>
 
 #include "auth/MicrosoftAuth.h"
+#include "auth/Secret.h"
 #include "core/AppConfig.h"
 #include "core/InstanceManager.h"
 #include "core/ModArchive.h"
@@ -397,7 +398,7 @@ void Bridge::getSettings(int id)
         {"bgImage", s.value("bgImage").toString()},
         {"hasToken", !config::token().isEmpty()},
         {"workerUrl", s.value("workerUrl").toString()},
-        {"hasSavedLogin", !config::readFileTrimmed(config::refreshTokenFile()).isEmpty()},
+        {"hasSavedLogin", !secret::load("msrefresh").isEmpty()},
     });
 }
 
@@ -647,15 +648,9 @@ void Bridge::login(int id, const QJsonObject &params)
         m_session = s;
         m_auth->deleteLater();
         m_auth = nullptr;
-        // « Se souvenir de moi » : on sauvegarde le refresh token en local.
-        if (remember && !s.msRefreshToken.isEmpty()) {
-            QDir().mkpath(config::defaultDataRoot());
-            QFile f(config::refreshTokenFile());
-            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-                f.write(s.msRefreshToken.toUtf8()); f.close();
-                f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
-            }
-        }
+        // « Se souvenir de moi » : refresh token chiffré par l'OS (DPAPI/libsecret).
+        if (remember && !s.msRefreshToken.isEmpty())
+            secret::save("msrefresh", s.msRefreshToken);
         resolveRoleAndReply(id, s);
     });
     connect(m_auth, &MicrosoftAuth::failed, this, [this, id](const QString &msg) {
@@ -669,7 +664,7 @@ void Bridge::login(int id, const QJsonObject &params)
 // Reconnexion silencieuse au démarrage via le refresh token sauvegardé.
 void Bridge::silentLogin(int id)
 {
-    const QString refresh = config::readFileTrimmed(config::refreshTokenFile());
+    const QString refresh = secret::load("msrefresh");
     if (refresh.isEmpty()) { replyError(id, "Aucune session mémorisée."); return; }
     const QString clientId = config::clientId();
     if (clientId.isEmpty()) { replyError(id, "client_id Azure manquant."); return; }
@@ -680,16 +675,14 @@ void Bridge::silentLogin(int id)
         m_session = s;
         m_auth->deleteLater();
         m_auth = nullptr;
-        // Le refresh token tourne : on réécrit le nouveau.
-        if (!s.msRefreshToken.isEmpty()) {
-            QFile f(config::refreshTokenFile());
-            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { f.write(s.msRefreshToken.toUtf8()); f.close(); }
-        }
+        // Le refresh token tourne : on réécrit le nouveau (chiffré).
+        if (!s.msRefreshToken.isEmpty())
+            secret::save("msrefresh", s.msRefreshToken);
         resolveRoleAndReply(id, s);
     });
     connect(m_auth, &MicrosoftAuth::failed, this, [this, id](const QString &msg) {
         // Session expirée : on efface le refresh pour repasser au login normal.
-        QFile::remove(config::refreshTokenFile());
+        secret::clear("msrefresh");
         replyError(id, msg);
         m_auth->deleteLater();
         m_auth = nullptr;
@@ -699,7 +692,7 @@ void Bridge::silentLogin(int id)
 
 void Bridge::logout(int id)
 {
-    QFile::remove(config::refreshTokenFile());   // oublie la session mémorisée
+    secret::clear("msrefresh");   // oublie la session mémorisée
     m_session = MinecraftSession{};
     replyOk(id, QJsonObject{{"loggedOut", true}});
 }

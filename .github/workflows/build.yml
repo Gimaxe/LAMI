@@ -92,7 +92,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y cmake build-essential \
-            qt6-base-dev qt6-websockets-dev libwebkit2gtk-4.1-dev pkg-config
+            qt6-base-dev qt6-websockets-dev libwebkit2gtk-4.1-dev libsecret-1-dev pkg-config
 
       - name: Configurer + compiler
         run: |
