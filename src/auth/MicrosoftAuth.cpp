@@ -101,6 +101,29 @@ void MicrosoftAuth::requestDeviceCode()
 }
 
 // --- 2) Polling du token MS -------------------------------------------------
+void MicrosoftAuth::startSilent(const QString &refreshToken)
+{
+    m_refreshToken = refreshToken;
+    QUrlQuery q;
+    q.addQueryItem("grant_type", "refresh_token");
+    q.addQueryItem("client_id", m_clientId);
+    q.addQueryItem("refresh_token", refreshToken);
+    q.addQueryItem("scope", kScope);
+
+    QNetworkReply *reply = postForm(kTokenUrl, q.toString(QUrl::FullyEncoded));
+    connect(reply, &QNetworkReply::finished, this, [this, reply]() {
+        reply->deleteLater();
+        const QJsonObject o = jsonOf(reply);
+        if (o.contains("access_token")) {
+            m_refreshToken = o.value("refresh_token").toString(m_refreshToken);
+            emit progress("Reconnexion automatique…");
+            authenticateXboxLive(o.value("access_token").toString());
+        } else {
+            emit failed(o.value("error_description").toString("Session expirée, reconnecte-toi."));
+        }
+    });
+}
+
 void MicrosoftAuth::pollForToken()
 {
     if (QDateTime::currentMSecsSinceEpoch() > m_expiresAtMs) {

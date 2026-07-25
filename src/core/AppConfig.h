@@ -69,6 +69,8 @@ inline QJsonObject readSettings()
 // Chemin du jeton dans le dossier de données (persiste entre réinstallations,
 // car séparé du dossier d'installation de l'app).
 inline QString tokenFile() { return QDir(defaultDataRoot()).filePath(".token"); }
+// Refresh token Microsoft sauvegardé (« se souvenir de moi »). Stocké en local.
+inline QString refreshTokenFile() { return QDir(defaultDataRoot()).filePath(".msrefresh"); }
 
 // Jeton GitHub (fine-grained PAT). Ordre : à côté de l'exe, puis ~/LAMI, puis le
 // dossier de données (défini via l'UI). Jamais committé ni journalisé.

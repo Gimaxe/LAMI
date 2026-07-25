@@ -1188,6 +1188,11 @@
                 <span id="login-btn-text">Se connecter avec Microsoft</span>
             </button>
 
+            <label class="flex items-center gap-2 text-xs text-neutral-400 cursor-pointer select-none">
+                <input type="checkbox" id="login-remember" checked class="accent-brand w-4 h-4">
+                <span>Rester connecté (se souvenir de moi)</span>
+            </label>
+
             <!-- Zone device-code (affichée pendant la connexion) -->
             <div id="login-code-box" class="hidden w-full flex flex-col items-center gap-3 bg-neutral-950/50 border border-brand-500/25 rounded-2xl p-5">
                 <p class="text-xs text-neutral-400 text-center">Ouvre cette page et saisis le code :</p>
@@ -1230,7 +1235,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.37.0";
+        const LAMI_VERSION = "0.38.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1296,6 +1301,9 @@
                 applyBackground(currentBg);
                 updateTokenStatus(!!s.hasToken);
                 const w = document.getElementById('setting-worker'); if (w) w.value = s.workerUrl || '';
+                // Reconnexion automatique si une session est mémorisée et qu'on
+                // n'est pas déjà connecté.
+                if (s.hasSavedLogin && !isMicrosoftAuthed && !silentInProgress) trySilentLogin();
             }).catch(function () {});
             loadBackgrounds();   // remplit les vignettes de fond
             populatePublishVersions();   // remplit les listes de versions du formulaire
@@ -1754,7 +1762,7 @@
         // obligatoire a pris la main.
         let loginGateDone = false;
         function showLoginIfNeeded() {
-            if (loginGateDone) return;
+            if (loginGateDone || silentInProgress) return;   // reconnexion auto en cours
             loginGateDone = true;
             if (!isMicrosoftAuthed) showLoginModal();
         }
@@ -1809,26 +1817,32 @@
 
         // Vraie connexion Microsoft (device code). Le backend pousse le code via
         // l'événement 'loginCode', puis résout pseudo/UUID/rôle réels.
+        // Applique une session authentifiée (connexion normale OU silencieuse).
+        function applyLoginSession(session) {
+            isMicrosoftAuthed = true;
+            document.getElementById('player-name').innerText = session.name;
+            document.getElementById('player-avatar').src =
+                `https://api.mineatar.io/face/${(session.uuid || '').replace(/-/g, '')}?scale=8`;
+            document.getElementById('btn-microsoft-text').innerText = "Déconnexion";
+            if (session.role) setDemoRole(session.role);
+            setLoginBusy(false);
+            hideLoginModal();
+        }
+
         function doMicrosoftLogin() {
             if (!window.lami || !window.lami.connected) {
                 showToast("Backend non connecté.", "error");
                 return;
             }
+            const remember = !!(document.getElementById('login-remember') || {}).checked;
             setLoginBusy(true);
             document.getElementById('login-code').innerText = '········';
             const lp = document.getElementById('login-progress');
             lp.className = 'text-[11px] text-neutral-500 text-center';
             lp.innerText = 'Préparation…';
             // Timeout long : le device code peut prendre plusieurs minutes.
-            lami.call('login', {}, 900000).then(function (session) {
-                isMicrosoftAuthed = true;
-                document.getElementById('player-name').innerText = session.name;
-                document.getElementById('player-avatar').src =
-                    `https://api.mineatar.io/face/${(session.uuid || '').replace(/-/g, '')}?scale=8`;
-                document.getElementById('btn-microsoft-text').innerText = "Déconnexion";
-                if (session.role) setDemoRole(session.role);
-                setLoginBusy(false);
-                hideLoginModal();
+            lami.call('login', { remember: remember }, 900000).then(function (session) {
+                applyLoginSession(session);
                 showToast(`Connecté : ${session.name}`, "success");
             }).catch(function (err) {
                 setLoginBusy(false);
@@ -1840,7 +1854,28 @@
             });
         }
 
+        // Reconnexion automatique au démarrage via le refresh token sauvegardé.
+        let silentInProgress = false;
+        function trySilentLogin() {
+            if (!window.lami || !window.lami.connected) { showLoginIfNeeded(); return; }
+            silentInProgress = true;
+            const lp = document.getElementById('login-progress');
+            if (lp) { lp.className = 'text-[11px] text-neutral-500 text-center'; lp.innerText = 'Reconnexion automatique…'; }
+            document.getElementById('login-code-box').classList.remove('hidden');
+            lami.call('silentLogin', {}, 900000).then(function (session) {
+                silentInProgress = false;
+                loginGateDone = true;
+                applyLoginSession(session);
+            }).catch(function () {
+                // Session expirée / absente → connexion normale.
+                silentInProgress = false;
+                document.getElementById('login-code-box').classList.add('hidden');
+                showLoginIfNeeded();
+            });
+        }
+
         function logout() {
+            if (window.lami && window.lami.connected) lami.call('logout', {}).catch(function () {});
             isMicrosoftAuthed = false;
             document.getElementById('player-name').innerText = "Non connecté";
             document.getElementById('player-avatar').src =

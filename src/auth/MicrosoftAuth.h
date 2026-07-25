@@ -38,6 +38,10 @@ public:
     // Lance le flux : demande un device code puis attend la validation.
     void start();
 
+    // Reconnexion SILENCIEUSE via un refresh token sauvegardé (pas de device
+    // code). Émet authenticated (avec un refresh token rafraîchi) ou failed.
+    void startSilent(const QString &refreshToken);
+
 signals:
     // À afficher à l'utilisateur : il ouvre verificationUri et saisit userCode.
     void deviceCodeReady(const QString &userCode, const QString &verificationUri);

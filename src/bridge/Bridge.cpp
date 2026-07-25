@@ -82,7 +82,11 @@ void Bridge::handle(const QJsonObject &request)
     } else if (method == "listInstalled") {
         listInstalled(id);
     } else if (method == "login") {
-        login(id);
+        login(id, params);
+    } else if (method == "silentLogin") {
+        silentLogin(id);
+    } else if (method == "logout") {
+        logout(id);
     } else if (method == "devLogin") {
         devLogin(id, params);
     } else if (method == "startDownload") {
@@ -393,6 +397,7 @@ void Bridge::getSettings(int id)
         {"bgImage", s.value("bgImage").toString()},
         {"hasToken", !config::token().isEmpty()},
         {"workerUrl", s.value("workerUrl").toString()},
+        {"hasSavedLogin", !config::readFileTrimmed(config::refreshTokenFile()).isEmpty()},
     });
 }
 
@@ -567,22 +572,69 @@ void Bridge::listInstalled(int id)
     replyOk(id, QJsonObject{{"installed", arr}});
 }
 
-void Bridge::login(int id)
+// Résout le rôle (via le Worker si configuré, sinon roles.json + repli owner)
+// puis répond à l'UI avec uuid/name/token/role.
+void Bridge::resolveRoleAndReply(int id, const MinecraftSession &s)
 {
-    const QString clientId = config::clientId();
-    if (clientId.isEmpty()) {
-        replyError(id, "client_id Azure manquant (.client_id).");
+    // Owner = super admin, quoi qu'il arrive (repli ultime).
+    const bool owner = QString(s.uuid).remove('-').toLower() == "6ce55042b80845c4999b54c99cd96398";
+
+    const QString wurl = config::workerUrl();
+    if (!wurl.isEmpty()) {
+        QNetworkRequest req{QUrl(wurl + "/whoami")};
+        req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+        QNetworkReply *reply = m_net->post(
+            req, QJsonDocument(QJsonObject{{"token", s.minecraftToken}}).toJson());
+        connect(reply, &QNetworkReply::finished, this, [this, id, s, reply, owner]() {
+            reply->deleteLater();
+            const QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
+            QString role, diag;
+            if (reply->error() != QNetworkReply::NoError)
+                diag = "Worker injoignable : " + reply->errorString();
+            else if (o.contains("error"))
+                diag = "Worker : " + o.value("error").toString();
+            else
+                role = o.value("role").toString();
+            if (role.isEmpty()) {
+                role = owner ? "superadmin" : "player";
+                if (!diag.isEmpty())
+                    emit event(QJsonObject{{"event", "loginProgress"}, {"step", diag}});
+            }
+            replyOk(id, QJsonObject{{"uuid", s.uuid}, {"name", s.name},
+                                    {"token", s.minecraftToken}, {"role", role}});
+        });
         return;
     }
-    // Nouvelle tentative : on annule une éventuelle connexion en cours.
-    if (m_auth) {
-        m_auth->deleteLater();
-        m_auth = nullptr;
-    }
 
+    // Sans Worker : lecture directe de roles.json (token requis), sinon repli owner.
+    auto conns = std::make_shared<QVector<QMetaObject::Connection>>();
+    auto cleanup = [conns]() { for (const auto &c : *conns) QObject::disconnect(c); conns->clear(); };
+    *conns << connect(m_gh, &GitHubClient::rolesFetched, this,
+                      [this, id, s, cleanup](const RoleTable &roles) {
+        cleanup();
+        replyOk(id, QJsonObject{{"uuid", s.uuid}, {"name", s.name},
+                                {"token", s.minecraftToken},
+                                {"role", roleToString(RoleResolver::roleFor(s.uuid, roles))}});
+    });
+    *conns << connect(m_gh, &GitHubClient::errorOccurred, this,
+                      [this, id, s, cleanup, owner](const QString &) {
+        cleanup();
+        replyOk(id, QJsonObject{{"uuid", s.uuid}, {"name", s.name},
+                                {"token", s.minecraftToken}, {"role", owner ? "superadmin" : "player"}});
+    });
+    m_gh->fetchRoles();
+}
+
+void Bridge::login(int id, const QJsonObject &params)
+{
+    const QString clientId = config::clientId();
+    if (clientId.isEmpty()) { replyError(id, "client_id Azure manquant."); return; }
+    if (m_auth) { m_auth->deleteLater(); m_auth = nullptr; }
+
+    const bool remember = params.value("remember").toBool();
     m_auth = new MicrosoftAuth(clientId, this);
 
-    // Le code à saisir est poussé comme événement (l'UI l'affiche).
     connect(m_auth, &MicrosoftAuth::deviceCodeReady, this,
             [this](const QString &code, const QString &uri) {
         emit event(QJsonObject{{"event", "loginCode"}, {"code", code}, {"uri", uri}});
@@ -591,61 +643,65 @@ void Bridge::login(int id)
         emit event(QJsonObject{{"event", "loginProgress"}, {"step", s}});
     });
     connect(m_auth, &MicrosoftAuth::authenticated, this,
-            [this, id](const MinecraftSession &s) {
-        m_session = s;   // source de vérité pour les actions sensibles (publier…)
+            [this, id, remember](const MinecraftSession &s) {
+        m_session = s;
         m_auth->deleteLater();
         m_auth = nullptr;
-
-        // --- Rôle via le WORKER (recommandé) : le Worker vérifie l'identité via
-        // Mojang à partir du token Minecraft et renvoie le rôle. AUCUN token
-        // GitHub côté client. Actif dès que workerUrl est configuré (réglages).
-        const QString wurl = config::workerUrl();
-        if (!wurl.isEmpty()) {
-            QNetworkRequest req{QUrl(wurl + "/whoami")};
-            req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
-            req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
-            QNetworkReply *reply = m_net->post(
-                req, QJsonDocument(QJsonObject{{"token", s.minecraftToken}}).toJson());
-            connect(reply, &QNetworkReply::finished, this, [this, id, s, reply]() {
-                reply->deleteLater();
-                QString role = "player";
-                if (reply->error() == QNetworkReply::NoError)
-                    role = QJsonDocument::fromJson(reply->readAll()).object()
-                               .value("role").toString("player");
-                replyOk(id, QJsonObject{{"uuid", s.uuid}, {"name", s.name},
-                                        {"token", s.minecraftToken}, {"role", role}});
-            });
-            return;
+        // « Se souvenir de moi » : on sauvegarde le refresh token en local.
+        if (remember && !s.msRefreshToken.isEmpty()) {
+            QDir().mkpath(config::defaultDataRoot());
+            QFile f(config::refreshTokenFile());
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+                f.write(s.msRefreshToken.toUtf8()); f.close();
+                f.setPermissions(QFileDevice::ReadOwner | QFileDevice::WriteOwner);
+            }
         }
-
-        // --- Repli SANS Worker : lecture directe de roles.json (token GitHub requis).
-        auto conns = std::make_shared<QVector<QMetaObject::Connection>>();
-        auto cleanup = [conns]() { for (const auto &c : *conns) QObject::disconnect(c); conns->clear(); };
-        *conns << connect(m_gh, &GitHubClient::rolesFetched, this,
-                          [this, id, s, cleanup](const RoleTable &roles) {
-            cleanup();
-            const Role r = RoleResolver::roleFor(s.uuid, roles);
-            replyOk(id, QJsonObject{{"uuid", s.uuid}, {"name", s.name},
-                                    {"token", s.minecraftToken}, {"role", roleToString(r)}});
-        });
-        *conns << connect(m_gh, &GitHubClient::errorOccurred, this,
-                          [this, id, s, cleanup](const QString &) {
-            cleanup();
-            // roles.json illisible : l'owner reste super admin (comme devLogin).
-            // Comparaison normalisée (l'UUID réel est sans tirets).
-            const bool owner = QString(s.uuid).remove('-').toLower() == "6ce55042b80845c4999b54c99cd96398";
-            replyOk(id, QJsonObject{{"uuid", s.uuid}, {"name", s.name},
-                                    {"token", s.minecraftToken}, {"role", owner ? "superadmin" : "player"}});
-        });
-        m_gh->fetchRoles();
+        resolveRoleAndReply(id, s);
     });
     connect(m_auth, &MicrosoftAuth::failed, this, [this, id](const QString &msg) {
         replyError(id, msg);
         m_auth->deleteLater();
         m_auth = nullptr;
     });
-
     m_auth->start();
+}
+
+// Reconnexion silencieuse au démarrage via le refresh token sauvegardé.
+void Bridge::silentLogin(int id)
+{
+    const QString refresh = config::readFileTrimmed(config::refreshTokenFile());
+    if (refresh.isEmpty()) { replyError(id, "Aucune session mémorisée."); return; }
+    const QString clientId = config::clientId();
+    if (clientId.isEmpty()) { replyError(id, "client_id Azure manquant."); return; }
+    if (m_auth) { m_auth->deleteLater(); m_auth = nullptr; }
+
+    m_auth = new MicrosoftAuth(clientId, this);
+    connect(m_auth, &MicrosoftAuth::authenticated, this, [this, id](const MinecraftSession &s) {
+        m_session = s;
+        m_auth->deleteLater();
+        m_auth = nullptr;
+        // Le refresh token tourne : on réécrit le nouveau.
+        if (!s.msRefreshToken.isEmpty()) {
+            QFile f(config::refreshTokenFile());
+            if (f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { f.write(s.msRefreshToken.toUtf8()); f.close(); }
+        }
+        resolveRoleAndReply(id, s);
+    });
+    connect(m_auth, &MicrosoftAuth::failed, this, [this, id](const QString &msg) {
+        // Session expirée : on efface le refresh pour repasser au login normal.
+        QFile::remove(config::refreshTokenFile());
+        replyError(id, msg);
+        m_auth->deleteLater();
+        m_auth = nullptr;
+    });
+    m_auth->startSilent(refresh);
+}
+
+void Bridge::logout(int id)
+{
+    QFile::remove(config::refreshTokenFile());   // oublie la session mémorisée
+    m_session = MinecraftSession{};
+    replyOk(id, QJsonObject{{"loggedOut", true}});
 }
 
 void Bridge::resolveServer(int id, const QJsonObject &params)

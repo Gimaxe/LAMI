@@ -43,7 +43,10 @@ private:
     void listLoaderVersions(int id, const QJsonObject &params);
     void listServers(int id);
     void listInstalled(int id);
-    void login(int id);
+    void login(int id, const QJsonObject &params);
+    void silentLogin(int id);                            // reconnexion via refresh token
+    void logout(int id);                                 // efface la session mémorisée
+    void resolveRoleAndReply(int id, const lami::MinecraftSession &s);   // rôle (Worker/repli) → réponse
     void devLogin(int id, const QJsonObject &params);   // PROVISOIRE (avant approbation Azure)
     void startDownload(int id, const QJsonObject &params);
     void launch(int id, const QJsonObject &params);
