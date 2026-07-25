@@ -18,6 +18,8 @@
 #include "auth/MicrosoftAuth.h"
 #include "core/AppConfig.h"
 #include "core/InstanceManager.h"
+#include "core/ModArchive.h"
+#include "core/ModScanner.h"
 #include "core/Publisher.h"
 #include "github/GitHubClient.h"
 #include "github/Models.h"
@@ -875,6 +877,59 @@ QString slugify(const QString &name)
 }
 } // namespace
 
+// --- Worker : routage des écritures -----------------------------------------
+bool Bridge::useWorker() const { return !config::workerUrl().isEmpty(); }
+
+// POST JSON vers le Worker ; ajoute automatiquement le token Minecraft (identité).
+// La réponse du Worker est renvoyée telle quelle à l'UI (ou son "error").
+void Bridge::postToWorker(int id, const QString &path, QJsonObject body)
+{
+    body.insert("token", m_session.minecraftToken);
+    QNetworkRequest req{QUrl(config::workerUrl() + path)};
+    req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+    QNetworkReply *reply = m_net->post(req, QJsonDocument(body).toJson());
+    connect(reply, &QNetworkReply::finished, this, [this, id, reply]() {
+        reply->deleteLater();
+        const QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
+        if (reply->error() != QNetworkReply::NoError || o.contains("error")) {
+            replyError(id, o.value("error").toString(
+                               "Worker : " + reply->errorString()));
+            return;
+        }
+        replyOk(id, o);
+    });
+}
+
+// Extrait chaque zip → fichiers → { type: [ {file, base64, sha256, size} ] }.
+QJsonObject Bridge::extractAssetsForWorker(const QHash<QString, QString> &zips)
+{
+    const QString base = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    QJsonObject out;
+    for (auto it = zips.begin(); it != zips.end(); ++it) {
+        const QString type = it.key();
+        const QString tmp = QDir(base).filePath("lami-wrk-" + type);
+        QDir(tmp).removeRecursively();
+        QDir().mkpath(tmp);
+        QString err;
+        if (ModArchive::extract(it.value(), tmp, QString(), &err).isEmpty())
+            continue;
+        QJsonArray arr;
+        for (const ModEntry &e : scanFolder(tmp)) {
+            QFile f(QDir(tmp).filePath(e.file));
+            if (!f.open(QIODevice::ReadOnly)) continue;
+            arr.append(QJsonObject{
+                {"file", e.file},
+                {"base64", QString::fromLatin1(f.readAll().toBase64())},
+                {"sha256", e.sha256},
+                {"size", static_cast<double>(e.size)},
+            });
+        }
+        if (!arr.isEmpty()) out.insert(type, arr);
+    }
+    return out;
+}
+
 void Bridge::publishServer(int id, const QJsonObject &params)
 {
     // Action sensible : on exige une session Microsoft authentifiée, et on utilise
@@ -901,12 +956,42 @@ void Bridge::publishServer(int id, const QJsonObject &params)
         return;
     }
 
+    const QString sid = srv.id;
+
+    // Les 4 zips d'assets (octets base64) fournis par le JS → fichiers temporaires.
+    const QString tmpBase = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+    QHash<QString, QString> zips;
+    const QHash<QString, QString> paramByType{
+        {assets::Mods, "modsZip"}, {assets::Plugins, "pluginsZip"},
+        {assets::ResourcePacks, "packsZip"}, {assets::Shaders, "shadersZip"}};
+    for (auto it = paramByType.begin(); it != paramByType.end(); ++it) {
+        const QString b64 = params.value(it.value()).toString();
+        if (b64.isEmpty())
+            continue;
+        const QString tmpZip = QDir(tmpBase).filePath("lami-pub-" + sid + "-" + it.key() + ".zip");
+        QFile f(tmpZip);
+        if (!f.open(QIODevice::WriteOnly)) { replyError(id, "Écriture temporaire impossible."); return; }
+        f.write(QByteArray::fromBase64(b64.toUtf8())); f.close();
+        zips.insert(it.key(), tmpZip);
+    }
+
+    // Worker : il vérifie le rôle, fixe le propriétaire = UUID vérifié, uploade
+    // les assets et écrit le manifeste. Aucun token GitHub côté client.
+    if (useWorker()) {
+        const QJsonObject server{
+            {"id", srv.id}, {"name", srv.name}, {"address", srv.address},
+            {"minecraft_version", srv.minecraftVersion}, {"loader", srv.loader},
+            {"loader_version", srv.loaderVersion}};
+        postToWorker(id, "/publish",
+                     QJsonObject{{"server", server}, {"assets", extractAssetsForWorker(zips)}});
+        return;
+    }
+
+    // --- Chemin direct GitHub (sans Worker) : Publisher + token. ---
     auto *gh = new GitHubClient(config::owner(), config::repo(), config::branch(), this);
     if (!config::token().isEmpty())
         gh->setToken(config::token());
     auto *pub = new Publisher(gh, this);
-
-    const QString sid = srv.id;
     auto cleanup = [gh, pub]() { gh->deleteLater(); pub->deleteLater(); };
 
     connect(pub, &Publisher::progress, this, [this, sid](const QString &s) {
@@ -925,26 +1010,7 @@ void Bridge::publishServer(int id, const QJsonObject &params)
         cleanup();
     });
 
-    // Les 4 zips d'assets (octets base64) fournis par le JS (webview : pas de chemin).
-    // On écrit chacun dans un .zip temporaire ; les catégories vides sont ignorées.
-    const QString tmpBase = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QHash<QString, QString> zips;
-    const QHash<QString, QString> paramByType{
-        {assets::Mods, "modsZip"}, {assets::Plugins, "pluginsZip"},
-        {assets::ResourcePacks, "packsZip"}, {assets::Shaders, "shadersZip"}};
-    for (auto it = paramByType.begin(); it != paramByType.end(); ++it) {
-        const QString b64 = params.value(it.value()).toString();
-        if (b64.isEmpty())
-            continue;
-        const QString tmpZip = QDir(tmpBase).filePath("lami-pub-" + sid + "-" + it.key() + ".zip");
-        QFile f(tmpZip);
-        if (!f.open(QIODevice::WriteOnly)) { replyError(id, "Écriture temporaire impossible."); cleanup(); return; }
-        f.write(QByteArray::fromBase64(b64.toUtf8())); f.close();
-        zips.insert(it.key(), tmpZip);
-    }
-
     if (zips.isEmpty()) {
-        // Aucun fichier → publier seulement le manifeste (dossier vide).
         const QString tmpDir = QDir(tmpBase).filePath("lami-pub-empty-" + sid);
         QDir(tmpDir).removeRecursively();
         QDir().mkpath(tmpDir);
@@ -965,6 +1031,41 @@ void Bridge::editServer(int id, const QJsonObject &params)
     }
     const QString serverId = params.value("id").toString().trimmed();
     if (serverId.isEmpty()) { replyError(id, "Identifiant de serveur manquant."); return; }
+
+    // Worker : vérifie la propriété, applique les changements + assets + vidages.
+    if (useWorker()) {
+        QJsonObject changes;
+        auto sof = [&params](const char *k) { return params.value(k).toString().trimmed(); };
+        if (!sof("name").isEmpty())    changes["name"] = sof("name");
+        if (!sof("ip").isEmpty())      changes["address"] = sof("ip");
+        if (!sof("version").isEmpty()) changes["minecraft_version"] = sof("version");
+        if (!sof("loader").isEmpty())  changes["loader"] = sof("loader").toLower();
+        if (params.contains("loaderVersion")) changes["loader_version"] = params.value("loaderVersion").toString();
+
+        QJsonArray clearArr;
+        const QHash<QString, QString> clr{
+            {assets::Mods, "clearMods"}, {assets::Plugins, "clearPlugins"},
+            {assets::ResourcePacks, "clearPacks"}, {assets::Shaders, "clearShaders"}};
+        for (auto it = clr.begin(); it != clr.end(); ++it)
+            if (params.value(it.value()).toBool()) clearArr.append(it.key());
+
+        const QString tb = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
+        QHash<QString, QString> zips;
+        const QHash<QString, QString> zp{
+            {assets::Mods, "modsZip"}, {assets::Plugins, "pluginsZip"},
+            {assets::ResourcePacks, "packsZip"}, {assets::Shaders, "shadersZip"}};
+        for (auto it = zp.begin(); it != zp.end(); ++it) {
+            const QString b64 = params.value(it.value()).toString();
+            if (b64.isEmpty()) continue;
+            const QString z = QDir(tb).filePath("lami-edit-" + serverId + "-" + it.key() + ".zip");
+            QFile f(z);
+            if (f.open(QIODevice::WriteOnly)) { f.write(QByteArray::fromBase64(b64.toUtf8())); f.close(); zips.insert(it.key(), z); }
+        }
+        postToWorker(id, "/edit", QJsonObject{{"id", serverId}, {"changes", changes},
+                                              {"clear", clearArr},
+                                              {"assets", extractAssetsForWorker(zips)}});
+        return;
+    }
 
     auto *gh = new GitHubClient(config::owner(), config::repo(), config::branch(), this);
     if (!config::token().isEmpty())
@@ -1062,6 +1163,9 @@ void Bridge::deleteServer(int id, const QJsonObject &params)
     const QString serverId = params.value("id").toString().trimmed();
     if (serverId.isEmpty()) { replyError(id, "Identifiant de serveur manquant."); return; }
 
+    // Worker : il vérifie l'identité + la propriété avant de supprimer.
+    if (useWorker()) { postToWorker(id, "/delete", QJsonObject{{"id", serverId}}); return; }
+
     auto *gh = new GitHubClient(config::owner(), config::repo(), config::branch(), this);
     if (!config::token().isEmpty())
         gh->setToken(config::token());
@@ -1132,6 +1236,9 @@ void Bridge::setRole(int id, const QJsonObject &params)
     const QString role = params.value("role").toString("host");
     if (uuid.isEmpty()) { replyError(id, "UUID manquant."); return; }
 
+    // Worker : il vérifie que l'appelant est super admin avant d'écrire roles.json.
+    if (useWorker()) { postToWorker(id, "/setRole", QJsonObject{{"uuid", uuid}, {"role", role}}); return; }
+
     requireSuperAdmin(id, [this, id, uuid, role](const RoleTable &) {
         auto conns = std::make_shared<QVector<QMetaObject::Connection>>();
         auto cleanup = [conns]() { for (const auto &c : *conns) QObject::disconnect(c); conns->clear(); };
@@ -1150,6 +1257,8 @@ void Bridge::removeRole(int id, const QJsonObject &params)
 {
     const QString uuid = params.value("uuid").toString().trimmed();
     if (uuid.isEmpty()) { replyError(id, "UUID manquant."); return; }
+
+    if (useWorker()) { postToWorker(id, "/removeRole", QJsonObject{{"uuid", uuid}}); return; }
 
     requireSuperAdmin(id, [this, id, uuid](const RoleTable &) {
         auto conns = std::make_shared<QVector<QMetaObject::Connection>>();

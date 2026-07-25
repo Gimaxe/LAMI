@@ -65,6 +65,13 @@ private:
     void setRole(int id, const QJsonObject &params);
     void removeRole(int id, const QJsonObject &params);
 
+    // --- Worker de confiance : quand workerUrl est défini, les écritures passent
+    // par lui (identité vérifiée via Mojang, aucun token GitHub côté client). ---
+    bool useWorker() const;
+    void postToWorker(int id, const QString &path, QJsonObject body);
+    // Extrait les zips fournis en assets base64 (file/base64/sha256/size) pour le Worker.
+    QJsonObject extractAssetsForWorker(const QHash<QString, QString> &zips);
+
     // Exécute `action(roles)` seulement si la session est Super Admin (sinon replyError).
     void requireSuperAdmin(int id, std::function<void(const RoleTable &)> action);
 

@@ -163,6 +163,9 @@ async function handleEdit(gh, body, uuid, role) {
   if (typeof c.loader_version === "string") cur.loader_version = c.loader_version;
   cur.owner = cur.owner || uuid;   // ne change jamais de propriétaire
 
+  // Catégories vidées explicitement (clear: ["mods", ...]).
+  for (const t of (body.clear || [])) if (ASSET_TYPES.includes(t)) cur[t] = [];
+
   await uploadAssets(gh, cur, body.assets || {});
   await gh.putFile(`servers/${id}.json`, JSON.stringify(cur, null, 2),
                    `Modification de ${id} via Worker (${uuid})`);
