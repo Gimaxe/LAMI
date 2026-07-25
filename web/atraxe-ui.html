@@ -1128,37 +1128,6 @@
                         </div>
                     </div>
 
-                    <!-- Section : Accès GitHub (jeton pour lire/publier sur le repo privé) -->
-                    <div class="bg-neutral-950/40 border border-neutral-800/60 rounded-2xl p-6 flex flex-col gap-4">
-                        <div class="flex items-center gap-3">
-                            <div class="w-8 h-8 rounded-lg bg-brand/10 text-brand-500 flex items-center justify-center">
-                                <i data-lucide="key-round" class="w-4.5 h-4.5"></i>
-                            </div>
-                            <h3 class="font-bold text-sm text-neutral-200">Accès & Sécurité</h3>
-                        </div>
-
-                        <!-- Worker de confiance : rôle vérifié via Microsoft/Mojang, sans token exposé -->
-                        <div class="flex flex-col gap-1.5">
-                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">URL du Worker (recommandé)</label>
-                            <input type="text" id="setting-worker" placeholder="https://lami-worker.xxx.workers.dev" autocomplete="off" class="w-full bg-dark-input border border-neutral-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-brand">
-                            <span class="text-[10px] text-neutral-500">Si renseigné : le rôle et les écritures passent par le Worker (identité vérifiée via ton compte Microsoft), <span class="text-neutral-400">sans aucun jeton GitHub côté client</span>. C'est la méthode sûre.</span>
-                        </div>
-
-                        <div class="flex flex-col gap-1.5 pt-1 border-t border-neutral-800/60">
-                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide mt-2">Jeton GitHub (sans Worker uniquement)</label>
-                            <div class="flex gap-2">
-                                <input type="password" id="setting-token" placeholder="github_pat_… (laisser vide = inchangé)" autocomplete="off" class="flex-1 bg-dark-input border border-neutral-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-brand">
-                                <button onclick="clearToken()" class="bg-neutral-800 hover:bg-red-950/40 hover:text-red-400 border border-neutral-700/60 font-semibold px-4 rounded-xl text-xs transition-all text-neutral-200">Retirer</button>
-                            </div>
-                            <span id="token-status" class="text-[10px] text-neutral-500">À n'utiliser que si tu n'as pas de Worker. Stocké en local, jamais partagé.</span>
-                        </div>
-                        <div class="flex justify-end pt-1">
-                            <button onclick="saveSettingSection('Accès')" class="px-5 py-2.5 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl text-xs transition-all shadow-md">
-                                Enregistrer
-                            </button>
-                        </div>
-                    </div>
-
                 </div>
 
             </div>
@@ -1178,7 +1147,13 @@
                 <h2 class="text-2xl font-black text-white">Bienvenue sur LAMI</h2>
                 <p class="text-sm text-neutral-400 mt-2">Connecte-toi avec ton compte Microsoft (Minecraft) pour continuer.</p>
             </div>
-            <button onclick="doMicrosoftLogin()" class="w-full py-3.5 px-4 bg-[#2f2f2f] hover:bg-[#3f3f3f] active:bg-[#1f1f1f] border border-neutral-700/60 rounded-xl flex items-center justify-center gap-3 text-sm font-bold text-neutral-100 transition-all">
+            <!-- État « reconnexion automatique » (au démarrage si session mémorisée) -->
+            <div id="login-reconnecting" class="hidden w-full flex flex-col items-center gap-3 py-2">
+                <i data-lucide="loader" class="w-7 h-7 text-brand-500 animate-spin"></i>
+                <span class="text-sm text-neutral-300 font-semibold">Reconnexion…</span>
+            </div>
+
+            <button id="login-btn" onclick="doMicrosoftLogin()" class="w-full py-3.5 px-4 bg-[#2f2f2f] hover:bg-[#3f3f3f] active:bg-[#1f1f1f] border border-neutral-700/60 rounded-xl flex items-center justify-center gap-3 text-sm font-bold text-neutral-100 transition-all">
                 <svg class="w-5 h-5" viewBox="0 0 23 23" fill="none" xmlns="http://www.w3.org/2000/svg">
                     <path d="M0 0H11V11H0V0Z" fill="#F25022"/>
                     <path d="M12 0H23V11H12V0Z" fill="#7FBA00"/>
@@ -1188,7 +1163,7 @@
                 <span id="login-btn-text">Se connecter avec Microsoft</span>
             </button>
 
-            <label class="flex items-center gap-2 text-xs text-neutral-400 cursor-pointer select-none">
+            <label id="login-remember-label" class="flex items-center gap-2 text-xs text-neutral-400 cursor-pointer select-none">
                 <input type="checkbox" id="login-remember" checked class="accent-brand w-4 h-4">
                 <span>Rester connecté (se souvenir de moi)</span>
             </label>
@@ -1235,7 +1210,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.39.0";
+        const LAMI_VERSION = "0.40.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1299,11 +1274,10 @@
                 setAccent(s.accentColor && isValidHex(s.accentColor) ? s.accentColor : '#06b6d4', true);
                 currentBg = s.bgImage || '';
                 applyBackground(currentBg);
-                updateTokenStatus(!!s.hasToken);
-                const w = document.getElementById('setting-worker'); if (w) w.value = s.workerUrl || '';
-                // Reconnexion automatique si une session est mémorisée et qu'on
-                // n'est pas déjà connecté.
+                // Reconnexion automatique si une session est mémorisée ; sinon on
+                // repasse en connexion normale (désactive l'état « Reconnexion… »).
                 if (s.hasSavedLogin && !isMicrosoftAuthed && !silentInProgress) trySilentLogin();
+                else if (!s.hasSavedLogin && !isMicrosoftAuthed) showLoginIfNeeded();
             }).catch(function () {});
             loadBackgrounds();   // remplit les vignettes de fond
             populatePublishVersions();   // remplit les listes de versions du formulaire
@@ -1425,10 +1399,11 @@
             document.querySelectorAll('.app-version').forEach(function (el) {
                 el.innerText = 'LAMI v' + LAMI_VERSION;
             });
-            // On n'affiche PAS le login tout de suite : on attend le check de mise
-            // à jour (évite le flash login -> màj). Repli après 3 s si le backend
-            // ne répond pas.
-            setTimeout(showLoginIfNeeded, 3000);
+            // Dès le départ : on couvre l'UI avec la modale en état « Reconnexion… »
+            // (évite tout flash « non connecté »). Elle se résout ensuite en
+            // reconnexion auto, connexion manuelle, ou mise à jour.
+            if (!isMicrosoftAuthed) { showLoginModal(); setLoginReconnecting(true); }
+            setTimeout(showLoginIfNeeded, 4000);   // repli si le backend ne répond pas
 
             // Initialiser les icônes lucide
             lucide.createIcons();
@@ -1764,6 +1739,7 @@
         function showLoginIfNeeded() {
             if (loginGateDone || silentInProgress) return;   // reconnexion auto en cours
             loginGateDone = true;
+            setLoginReconnecting(false);        // repasse en mode connexion normale
             if (!isMicrosoftAuthed) showLoginModal();
         }
         function checkForUpdate() {
@@ -1856,21 +1832,34 @@
 
         // Reconnexion automatique au démarrage via le refresh token sauvegardé.
         let silentInProgress = false;
+        // Bascule la modale entre « connexion normale » et « reconnexion en cours ».
+        function setLoginReconnecting(on) {
+            const rec = document.getElementById('login-reconnecting');
+            const btn = document.getElementById('login-btn');
+            const rem = document.getElementById('login-remember-label');
+            const box = document.getElementById('login-code-box');
+            if (rec) rec.classList.toggle('hidden', !on);
+            if (btn) btn.classList.toggle('hidden', on);
+            if (rem) rem.classList.toggle('hidden', on);
+            if (box) box.classList.add('hidden');
+            if (on && window.lucide) lucide.createIcons();
+        }
+
         function trySilentLogin() {
             if (!window.lami || !window.lami.connected) { showLoginIfNeeded(); return; }
             silentInProgress = true;
-            const lp = document.getElementById('login-progress');
-            if (lp) { lp.className = 'text-[11px] text-neutral-500 text-center'; lp.innerText = 'Reconnexion automatique…'; }
-            document.getElementById('login-code-box').classList.remove('hidden');
+            loginGateDone = true;               // le login normal ne s'affiche pas
+            setLoginReconnecting(true);         // affiche « Reconnexion… » à la place
+            showLoginModal();                   // couvre l'UI (pas de flash « non connecté »)
             lami.call('silentLogin', {}, 900000).then(function (session) {
                 silentInProgress = false;
-                loginGateDone = true;
-                applyLoginSession(session);
+                setLoginReconnecting(false);
+                applyLoginSession(session);     // masque la modale
             }).catch(function () {
                 // Session expirée / absente → connexion normale.
                 silentInProgress = false;
-                document.getElementById('login-code-box').classList.add('hidden');
-                showLoginIfNeeded();
+                setLoginReconnecting(false);    // réaffiche le bouton + case
+                // La modale reste affichée pour la connexion manuelle.
             });
         }
 
@@ -3724,22 +3713,6 @@
                 payload.accentColor = currentAccent;
                 payload.bgImage = currentBg;
                 okMsg = 'Apparence enregistrée.';
-            } else if (sectionName === 'Accès') {
-                if (!(window.lami && window.lami.connected)) { showToast('Backend non connecté.', 'error'); return; }
-                // 1) URL du Worker (dans settings.json).
-                const worker = document.getElementById('setting-worker').value.trim();
-                lami.call('saveSettings', { workerUrl: worker }).catch(function () {});
-                // 2) Jeton GitHub (méthode dédiée, seulement si saisi).
-                const tok = document.getElementById('setting-token').value.trim();
-                if (tok) {
-                    lami.call('setToken', { token: tok }).then(function () {
-                        document.getElementById('setting-token').value = '';
-                        updateTokenStatus(true);
-                    }).catch(function (err) { showToast('Jeton : ' + (err.message || err), 'error'); });
-                }
-                showToast(worker ? 'Worker configuré (rôle vérifié sans jeton exposé).' : 'Accès enregistré.', 'success');
-                refreshServersFromBackend();
-                return;
             }
             if (window.lami && window.lami.connected) {
                 lami.call('saveSettings', payload)

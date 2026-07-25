@@ -96,10 +96,17 @@ inline QString javaPath()
 }
 // Arguments JVM additionnels saisis par l'utilisateur (chaîne brute).
 inline QString jvmArgs() { return readSettings().value("jvmArgs").toString(); }
-// URL du Worker de confiance (vide = écritures directes GitHub, comportement
-// actuel). Quand renseignée, les écritures passeront par le Worker (voir
-// worker/README.md). Prêt mais non branché tant que l'auth Microsoft n'est pas OK.
-inline QString workerUrl() { return readSettings().value("workerUrl").toString().trimmed(); }
+// URL du Worker de confiance. Figée en dur (comme client_id) : c'est LUI qui
+// détient le token GitHub et impose rôles/propriété. Un réglage peut la
+// surcharger (dev), mais par défaut tout le monde passe par le vrai Worker.
+// NB sécurité : la changer côté client ne permet PAS d'altérer le repo — seul
+// ce Worker-ci possède le token d'écriture ; un faux Worker ne trompe que
+// l'affichage local de l'attaquant, jamais la base.
+inline QString workerUrl()
+{
+    const QString w = readSettings().value("workerUrl").toString().trimmed();
+    return w.isEmpty() ? QStringLiteral("https://lami-worker.lami-atraxe.workers.dev") : w;
+}
 // Comportement de fermeture du launcher au lancement du jeu.
 inline QString closeBehavior() { return readSettings().value("closeBehavior").toString(); }
 // L'utilisateur veut-il forcer SON java (au lieu du JRE auto) ?
