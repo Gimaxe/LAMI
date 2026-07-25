@@ -390,6 +390,7 @@ void Bridge::getSettings(int id)
         {"accentColor", s.value("accentColor").toString()},
         {"bgImage", s.value("bgImage").toString()},
         {"hasToken", !config::token().isEmpty()},
+        {"workerUrl", s.value("workerUrl").toString()},
     });
 }
 
@@ -447,6 +448,8 @@ void Bridge::saveSettings(int id, const QJsonObject &params)
         s["accentColor"] = params.value("accentColor").toString().trimmed();
     if (params.contains("bgImage"))
         s["bgImage"] = params.value("bgImage").toString();
+    if (params.contains("workerUrl"))
+        s["workerUrl"] = params.value("workerUrl").toString().trimmed();
 
     QDir().mkpath(config::defaultDataRoot());
     QFile f(settingsPath());
@@ -591,7 +594,29 @@ void Bridge::login(int id)
         m_auth->deleteLater();
         m_auth = nullptr;
 
-        // Résout le rôle réel depuis roles.json avant de répondre à l'UI.
+        // --- Rôle via le WORKER (recommandé) : le Worker vérifie l'identité via
+        // Mojang à partir du token Minecraft et renvoie le rôle. AUCUN token
+        // GitHub côté client. Actif dès que workerUrl est configuré (réglages).
+        const QString wurl = config::workerUrl();
+        if (!wurl.isEmpty()) {
+            QNetworkRequest req{QUrl(wurl + "/whoami")};
+            req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+            req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+            QNetworkReply *reply = m_net->post(
+                req, QJsonDocument(QJsonObject{{"token", s.minecraftToken}}).toJson());
+            connect(reply, &QNetworkReply::finished, this, [this, id, s, reply]() {
+                reply->deleteLater();
+                QString role = "player";
+                if (reply->error() == QNetworkReply::NoError)
+                    role = QJsonDocument::fromJson(reply->readAll()).object()
+                               .value("role").toString("player");
+                replyOk(id, QJsonObject{{"uuid", s.uuid}, {"name", s.name},
+                                        {"token", s.minecraftToken}, {"role", role}});
+            });
+            return;
+        }
+
+        // --- Repli SANS Worker : lecture directe de roles.json (token GitHub requis).
         auto conns = std::make_shared<QVector<QMetaObject::Connection>>();
         auto cleanup = [conns]() { for (const auto &c : *conns) QObject::disconnect(c); conns->clear(); };
         *conns << connect(m_gh, &GitHubClient::rolesFetched, this,

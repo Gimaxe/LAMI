@@ -1134,19 +1134,27 @@
                             <div class="w-8 h-8 rounded-lg bg-brand/10 text-brand-500 flex items-center justify-center">
                                 <i data-lucide="key-round" class="w-4.5 h-4.5"></i>
                             </div>
-                            <h3 class="font-bold text-sm text-neutral-200">Accès GitHub</h3>
+                            <h3 class="font-bold text-sm text-neutral-200">Accès & Sécurité</h3>
                         </div>
+
+                        <!-- Worker de confiance : rôle vérifié via Microsoft/Mojang, sans token exposé -->
                         <div class="flex flex-col gap-1.5">
-                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Jeton d'accès (fine-grained PAT)</label>
+                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">URL du Worker (recommandé)</label>
+                            <input type="text" id="setting-worker" placeholder="https://lami-worker.xxx.workers.dev" autocomplete="off" class="w-full bg-dark-input border border-neutral-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-brand">
+                            <span class="text-[10px] text-neutral-500">Si renseigné : le rôle et les écritures passent par le Worker (identité vérifiée via ton compte Microsoft), <span class="text-neutral-400">sans aucun jeton GitHub côté client</span>. C'est la méthode sûre.</span>
+                        </div>
+
+                        <div class="flex flex-col gap-1.5 pt-1 border-t border-neutral-800/60">
+                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide mt-2">Jeton GitHub (sans Worker uniquement)</label>
                             <div class="flex gap-2">
                                 <input type="password" id="setting-token" placeholder="github_pat_… (laisser vide = inchangé)" autocomplete="off" class="flex-1 bg-dark-input border border-neutral-800 rounded-xl px-4 py-3 text-xs text-white outline-none focus:border-brand">
                                 <button onclick="clearToken()" class="bg-neutral-800 hover:bg-red-950/40 hover:text-red-400 border border-neutral-700/60 font-semibold px-4 rounded-xl text-xs transition-all text-neutral-200">Retirer</button>
                             </div>
-                            <span id="token-status" class="text-[10px] text-neutral-500">Nécessaire pour rechercher/installer des serveurs et publier (repo privé). Stocké en local, jamais partagé.</span>
+                            <span id="token-status" class="text-[10px] text-neutral-500">À n'utiliser que si tu n'as pas de Worker. Stocké en local, jamais partagé.</span>
                         </div>
                         <div class="flex justify-end pt-1">
                             <button onclick="saveSettingSection('Accès')" class="px-5 py-2.5 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl text-xs transition-all shadow-md">
-                                Enregistrer le jeton
+                                Enregistrer
                             </button>
                         </div>
                     </div>
@@ -1222,7 +1230,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.35.0";
+        const LAMI_VERSION = "0.36.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1287,6 +1295,7 @@
                 currentBg = s.bgImage || '';
                 applyBackground(currentBg);
                 updateTokenStatus(!!s.hasToken);
+                const w = document.getElementById('setting-worker'); if (w) w.value = s.workerUrl || '';
             }).catch(function () {});
             loadBackgrounds();   // remplit les vignettes de fond
             populatePublishVersions();   // remplit les listes de versions du formulaire
@@ -3681,17 +3690,20 @@
                 payload.bgImage = currentBg;
                 okMsg = 'Apparence enregistrée.';
             } else if (sectionName === 'Accès') {
-                // Jeton : méthode dédiée (stocké à part, pas dans settings.json).
+                if (!(window.lami && window.lami.connected)) { showToast('Backend non connecté.', 'error'); return; }
+                // 1) URL du Worker (dans settings.json).
+                const worker = document.getElementById('setting-worker').value.trim();
+                lami.call('saveSettings', { workerUrl: worker }).catch(function () {});
+                // 2) Jeton GitHub (méthode dédiée, seulement si saisi).
                 const tok = document.getElementById('setting-token').value.trim();
-                if (!tok) { showToast('Saisis un jeton (ou utilise « Retirer »).', 'error'); return; }
-                if (window.lami && window.lami.connected) {
+                if (tok) {
                     lami.call('setToken', { token: tok }).then(function () {
                         document.getElementById('setting-token').value = '';
                         updateTokenStatus(true);
-                        showToast('Jeton enregistré. Tu peux maintenant publier/installer.', 'success');
-                        refreshServersFromBackend();
-                    }).catch(function (err) { showToast('Échec : ' + (err.message || err), 'error'); });
+                    }).catch(function (err) { showToast('Jeton : ' + (err.message || err), 'error'); });
                 }
+                showToast(worker ? 'Worker configuré (rôle vérifié sans jeton exposé).' : 'Accès enregistré.', 'success');
+                refreshServersFromBackend();
                 return;
             }
             if (window.lami && window.lami.connected) {
