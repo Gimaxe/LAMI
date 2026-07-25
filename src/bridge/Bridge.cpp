@@ -588,10 +588,28 @@ void Bridge::login(int id)
     connect(m_auth, &MicrosoftAuth::authenticated, this,
             [this, id](const MinecraftSession &s) {
         m_session = s;   // source de vérité pour les actions sensibles (publier…)
-        replyOk(id, QJsonObject{
-            {"uuid", s.uuid}, {"name", s.name}, {"token", s.minecraftToken}});
         m_auth->deleteLater();
         m_auth = nullptr;
+
+        // Résout le rôle réel depuis roles.json avant de répondre à l'UI.
+        auto conns = std::make_shared<QVector<QMetaObject::Connection>>();
+        auto cleanup = [conns]() { for (const auto &c : *conns) QObject::disconnect(c); conns->clear(); };
+        *conns << connect(m_gh, &GitHubClient::rolesFetched, this,
+                          [this, id, s, cleanup](const RoleTable &roles) {
+            cleanup();
+            const Role r = RoleResolver::roleFor(s.uuid, roles);
+            replyOk(id, QJsonObject{{"uuid", s.uuid}, {"name", s.name},
+                                    {"token", s.minecraftToken}, {"role", roleToString(r)}});
+        });
+        *conns << connect(m_gh, &GitHubClient::errorOccurred, this,
+                          [this, id, s, cleanup](const QString &) {
+            cleanup();
+            // roles.json illisible : l'owner reste super admin (comme devLogin).
+            const bool owner = s.uuid == "6ce55042-b808-45c4-999b-54c99cd96398";
+            replyOk(id, QJsonObject{{"uuid", s.uuid}, {"name", s.name},
+                                    {"token", s.minecraftToken}, {"role", owner ? "superadmin" : "player"}});
+        });
+        m_gh->fetchRoles();
     });
     connect(m_auth, &MicrosoftAuth::failed, this, [this, id](const QString &msg) {
         replyError(id, msg);

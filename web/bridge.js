@@ -58,7 +58,7 @@
             return connected ? Promise.resolve()
                              : new Promise(function (r) { readyWaiters.push(r); });
         },
-        call: function (method, params) {
+        call: function (method, params, timeoutMs) {
             params = params || {};
             return new Promise(function (resolve, reject) {
                 if (!connected) { reject(new Error('Backend non connecté')); return; }
@@ -67,7 +67,7 @@
                 ws.send(JSON.stringify({ id: id, method: method, params: params }));
                 setTimeout(function () {
                     if (pending.has(id)) { pending.delete(id); reject(new Error('Délai dépassé')); }
-                }, 30000);
+                }, timeoutMs || 30000);
             });
         },
         on: function (event, cb) {

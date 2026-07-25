@@ -1177,8 +1177,18 @@
                     <path d="M0 12H11V23H0V12Z" fill="#00A4EF"/>
                     <path d="M12 12H23V23H12V12Z" fill="#FFB900"/>
                 </svg>
-                <span>Se connecter avec Microsoft</span>
+                <span id="login-btn-text">Se connecter avec Microsoft</span>
             </button>
+
+            <!-- Zone device-code (affichée pendant la connexion) -->
+            <div id="login-code-box" class="hidden w-full flex flex-col items-center gap-3 bg-neutral-950/50 border border-brand-500/25 rounded-2xl p-5">
+                <p class="text-xs text-neutral-400 text-center">Ouvre cette page et saisis le code :</p>
+                <a id="login-code-uri" href="#" onclick="openLoginUri(event)" class="text-sm font-bold text-brand-400 underline">microsoft.com/link</a>
+                <div id="login-code" class="text-2xl font-black tracking-[0.3em] text-white bg-neutral-900 border border-neutral-800 rounded-xl px-5 py-2 select-all">--------</div>
+                <button onclick="copyLoginCode()" class="text-[11px] text-neutral-400 hover:text-brand-400">Copier le code</button>
+                <p id="login-progress" class="text-[11px] text-neutral-500 text-center"></p>
+            </div>
+
             <p class="text-[11px] text-neutral-600 text-center">Ton compte sert uniquement à lancer Minecraft avec ton profil.</p>
             <span class="app-version text-[10px] text-neutral-700 font-mono">LAMI v0.1.0</span>
         </div>
@@ -1212,7 +1222,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.31.0";
+        const LAMI_VERSION = "0.32.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1424,10 +1434,17 @@
             // Affiche l'URL + le code Microsoft dès qu'ils arrivent (device code).
             if (window.lami) {
                 lami.on('loginCode', function (m) {
-                    showToast(`Ouvre ${m.uri} et entre le code : ${m.code}`, "info");
+                    loginUri = m.uri || 'https://www.microsoft.com/link';
+                    const codeEl = document.getElementById('login-code');
+                    const uriEl = document.getElementById('login-code-uri');
+                    if (codeEl) codeEl.innerText = m.code || '--------';
+                    if (uriEl) uriEl.innerText = (m.uri || '').replace(/^https?:\/\//, '');
+                    document.getElementById('login-code-box').classList.remove('hidden');
+                    document.getElementById('login-progress').innerText = 'En attente de validation…';
                 });
                 lami.on('loginProgress', function (m) {
-                    showToast(m.step, "info");
+                    const p = document.getElementById('login-progress');
+                    if (p) p.innerText = m.step || '';
                 });
 
                 // Progression du téléchargement (poussée par le backend).
@@ -1740,37 +1757,44 @@
         // ⚠️ PROVISOIRE : tant que l'app Azure n'est pas approuvée par Microsoft,
         // on SIMULE une connexion réussie. Une fois approuvée, remplacer le corps
         // de cette fonction par un vrai lami.call('login') (voir plus bas, commenté).
-        function doMicrosoftLogin() {
-            // PROVISOIRE : établit la session côté backend (identité gimaxe / super
-            // admin) pour tester publication + admin avant l'approbation Azure.
-            if (window.lami && window.lami.connected) {
-                lami.call('devLogin', {}).then(function (s) {
-                    if (s && s.role) setDemoRole(s.role);   // rôle réel (admin/host/player)
-                }).catch(function () {});
-            }
-            isMicrosoftAuthed = true;
-            document.getElementById('player-name').innerText = "gimaxe";
-            document.getElementById('player-avatar').src =
-                "https://api.mineatar.io/face/6ce55042b80845c4999b54c99cd96398?scale=8";
-            document.getElementById('btn-microsoft-text').innerText = "Déconnexion";
-            setDemoRole(currentRole);   // affiche le rôle sous le pseudo
-            hideLoginModal();
-            showToast("Connecté avec Microsoft.", "success");
+        let loginUri = 'https://www.microsoft.com/link';
+        function openLoginUri(e) { if (e) e.preventDefault(); if (window.lami && window.lami.connected) lami.call('openUrl', { url: loginUri }).catch(function () {}); }
+        function copyLoginCode() {
+            const c = document.getElementById('login-code').innerText.trim();
+            if (navigator.clipboard) navigator.clipboard.writeText(c).then(function () { showToast('Code copié.', 'success'); });
+        }
+        function setLoginBusy(busy) {
+            const box = document.getElementById('login-code-box');
+            const btn = document.getElementById('login-btn-text');
+            if (busy) { if (box) box.classList.remove('hidden'); if (btn) btn.innerText = 'Connexion en cours…'; }
+            else { if (box) box.classList.add('hidden'); if (btn) btn.innerText = 'Se connecter avec Microsoft'; }
+        }
 
-            /* --- VERSION RÉELLE (à activer quand Azure aura approuvé l'app) ---
-            lami.call('login').then(function (session) {
+        // Vraie connexion Microsoft (device code). Le backend pousse le code via
+        // l'événement 'loginCode', puis résout pseudo/UUID/rôle réels.
+        function doMicrosoftLogin() {
+            if (!window.lami || !window.lami.connected) {
+                showToast("Backend non connecté.", "error");
+                return;
+            }
+            setLoginBusy(true);
+            document.getElementById('login-code').innerText = '········';
+            document.getElementById('login-progress').innerText = 'Préparation…';
+            // Timeout long : le device code peut prendre plusieurs minutes.
+            lami.call('login', {}, 900000).then(function (session) {
                 isMicrosoftAuthed = true;
                 document.getElementById('player-name').innerText = session.name;
                 document.getElementById('player-avatar').src =
-                    `https://api.mineatar.io/face/${session.uuid}?scale=8`;
+                    `https://api.mineatar.io/face/${(session.uuid || '').replace(/-/g, '')}?scale=8`;
                 document.getElementById('btn-microsoft-text').innerText = "Déconnexion";
-                setDemoRole(currentRole);
+                if (session.role) setDemoRole(session.role);
+                setLoginBusy(false);
                 hideLoginModal();
                 showToast(`Connecté : ${session.name}`, "success");
             }).catch(function (err) {
-                showToast("Échec de connexion : " + err.message, "error");
+                setLoginBusy(false);
+                showToast("Connexion échouée : " + (err.message || err), "error");
             });
-            */
         }
 
         function logout() {
