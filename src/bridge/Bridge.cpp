@@ -605,7 +605,8 @@ void Bridge::login(int id)
                           [this, id, s, cleanup](const QString &) {
             cleanup();
             // roles.json illisible : l'owner reste super admin (comme devLogin).
-            const bool owner = s.uuid == "6ce55042-b808-45c4-999b-54c99cd96398";
+            // Comparaison normalisée (l'UUID réel est sans tirets).
+            const bool owner = QString(s.uuid).remove('-').toLower() == "6ce55042b80845c4999b54c99cd96398";
             replyOk(id, QJsonObject{{"uuid", s.uuid}, {"name", s.name},
                                     {"token", s.minecraftToken}, {"role", owner ? "superadmin" : "player"}});
         });
@@ -674,7 +675,7 @@ void Bridge::devLogin(int id, const QJsonObject &params)
         cleanup();
         // roles.json illisible (repo privé sans token) : la connexion DEV de
         // l'owner « gimaxe » reste super admin pour pouvoir tester.
-        const bool owner = m_session.uuid == "6ce55042-b808-45c4-999b-54c99cd96398";
+        const bool owner = QString(m_session.uuid).remove('-').toLower() == "6ce55042b80845c4999b54c99cd96398";
         replyOk(id, QJsonObject{{"uuid", m_session.uuid}, {"name", m_session.name},
                                 {"role", owner ? "superadmin" : "player"}});
     });
