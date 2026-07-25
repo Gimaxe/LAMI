@@ -1222,7 +1222,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.33.0";
+        const LAMI_VERSION = "0.34.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1231,7 +1231,18 @@
         let isPublishing = false;
         let isNavCollapsed = false;
         let isAssetsPanelVisible = false; // Gestionnaire de l'état déroulé de la grille
-        
+
+        // Désactive le menu contextuel (boutons Edge / « ouvrir dans Edge » /
+        // inspecter) et les raccourcis d'outils de dev — l'app doit se comporter
+        // comme une appli native, pas comme une page web.
+        document.addEventListener('contextmenu', function (e) { e.preventDefault(); }, false);
+        document.addEventListener('keydown', function (e) {
+            const k = (e.key || '').toUpperCase();
+            if (k === 'F12') { e.preventDefault(); return; }
+            if (e.ctrlKey && e.shiftKey && (k === 'I' || k === 'J' || k === 'C')) { e.preventDefault(); return; }
+            if (e.ctrlKey && (k === 'U' || k === 'P')) { e.preventDefault(); }  // voir source / imprimer
+        }, false);
+
         // --- ÉTAT DU TÉLÉCHARGEMENT EN ARRIÈRE-PLAN ---
         let activeDownload = {
             serverId: null,
