@@ -33,7 +33,14 @@ inline QString readSecret(const QString &name)
 
 // client_id Azure (non secret). Le jeton GitHub (token()) est défini plus bas
 // car il consulte aussi le dossier de données.
-inline QString clientId() { return readSecret(".client_id"); }
+// client_id de l'app Azure. NON secret (identifiant public de l'OAuth) : on le
+// met en dur par défaut pour que la connexion marche sur l'app installée, tout
+// en laissant un fichier .client_id le surcharger si besoin.
+inline QString clientId()
+{
+    const QString c = readSecret(".client_id");
+    return c.isEmpty() ? QStringLiteral("7b5b947c-816f-45a5-992f-c43968fd4b15") : c;
+}
 
 // Coordonnées du repo-BDD.
 inline QString owner()  { return "Gimaxe"; }

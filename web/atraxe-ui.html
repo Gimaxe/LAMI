@@ -1222,7 +1222,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.32.0";
+        const LAMI_VERSION = "0.33.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1397,7 +1397,10 @@
             document.querySelectorAll('.app-version').forEach(function (el) {
                 el.innerText = 'LAMI v' + LAMI_VERSION;
             });
-            if (!isMicrosoftAuthed) showLoginModal();
+            // On n'affiche PAS le login tout de suite : on attend le check de mise
+            // à jour (évite le flash login -> màj). Repli après 3 s si le backend
+            // ne répond pas.
+            setTimeout(showLoginIfNeeded, 3000);
 
             // Initialiser les icônes lucide
             lucide.createIcons();
@@ -1727,6 +1730,14 @@
         function hideLoginModal() { document.getElementById('login-modal').classList.add('hidden'); }
 
         // Vérifie s'il existe une version plus récente → modale bloquante.
+        // Affiche la modale de connexion (une seule fois), sauf si une mise à jour
+        // obligatoire a pris la main.
+        let loginGateDone = false;
+        function showLoginIfNeeded() {
+            if (loginGateDone) return;
+            loginGateDone = true;
+            if (!isMicrosoftAuthed) showLoginModal();
+        }
         function checkForUpdate() {
             if (!window.lami || !window.lami.connected) return;
             lami.call('checkUpdate', { version: LAMI_VERSION }).then(function (r) {
@@ -1734,9 +1745,15 @@
                     updateUrl = r.url || 'https://github.com/Gimaxe/LAMI/releases/latest';
                     const vv = document.getElementById('update-versions');
                     if (vv) vv.innerText = 'v' + (r.current || LAMI_VERSION) + '  →  v' + (r.latest || '?');
+                    // Mise à jour obligatoire d'abord : on affiche la màj et on
+                    // n'affiche PAS le login par-dessous.
+                    loginGateDone = true;
+                    document.getElementById('login-modal').classList.add('hidden');
                     document.getElementById('update-modal').classList.remove('hidden');
+                } else {
+                    showLoginIfNeeded();
                 }
-            }).catch(function () {});
+            }).catch(function () { showLoginIfNeeded(); });
         }
         function downloadUpdate() {
             if (!window.lami || !window.lami.connected) return;
@@ -1779,7 +1796,9 @@
             }
             setLoginBusy(true);
             document.getElementById('login-code').innerText = '········';
-            document.getElementById('login-progress').innerText = 'Préparation…';
+            const lp = document.getElementById('login-progress');
+            lp.className = 'text-[11px] text-neutral-500 text-center';
+            lp.innerText = 'Préparation…';
             // Timeout long : le device code peut prendre plusieurs minutes.
             lami.call('login', {}, 900000).then(function (session) {
                 isMicrosoftAuthed = true;
@@ -1793,7 +1812,11 @@
                 showToast(`Connecté : ${session.name}`, "success");
             }).catch(function (err) {
                 setLoginBusy(false);
-                showToast("Connexion échouée : " + (err.message || err), "error");
+                const msg = 'Connexion échouée : ' + (err.message || err);
+                const p = document.getElementById('login-progress');
+                if (p) { p.innerText = msg; p.className = 'text-[11px] text-red-400 text-center'; }
+                document.getElementById('login-code-box').classList.remove('hidden');
+                showToast(msg, 'error');
             });
         }
 
