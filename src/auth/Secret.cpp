@@ -1,16 +1,17 @@
+// libsecret (glib/gio) DOIT être inclus AVANT Qt : sinon collision de macros
+// ("expected unqualified-id before 'public'"). On teste __linux__ (symbole du
+// compilateur), Q_OS_* n'étant pas encore défini. Windows garde son ordre
+// habituel (windows.h APRÈS Qt), plus bas, pour ne pas casser le build MSVC.
+#if defined(__linux__) && defined(LAMI_HAVE_LIBSECRET)
+#  include <libsecret/secret.h>
+#endif
+
 #include "auth/Secret.h"
 
 #include <QDir>
 #include <QFile>
 
 #include "core/AppConfig.h"
-
-#if defined(Q_OS_WIN)
-#include <windows.h>
-#include <dpapi.h>
-#elif defined(Q_OS_LINUX) && defined(LAMI_HAVE_LIBSECRET)
-#include <libsecret/secret.h>
-#endif
 
 namespace lami {
 namespace secret {
@@ -37,6 +38,8 @@ void clearFallback(const QString &name) { QFile::remove(fallbackFile(name)); }
 
 #if defined(Q_OS_WIN)
 // ----------------------------------------------------------------- Windows DPAPI
+#include <windows.h>
+#include <dpapi.h>
 namespace {
 QString blobFile(const QString &name)
 {
