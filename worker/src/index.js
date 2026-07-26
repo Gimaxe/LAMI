@@ -399,21 +399,41 @@ function bankPathRaw(type, mcVersion, loader, file) {
   return `${type}/${mcVersion}/${file}`;
 }
 
+// Read-modify-write d'index.json avec retry COMPLET : en cas d'écriture
+// concurrente (ex. deux suppressions en même temps), GitHub renvoie 409/422 ;
+// rejouer seulement le PUT perdrait la modification de l'autre requête, donc on
+// relit l'index frais et on réapplique la mutation à chaque tentative.
+async function withIndexRetry(gh, message, mutate) {
+  for (let attempt = 0; ; attempt++) {
+    const meta = await gh.getFileMeta("servers/index.json").catch(() => null);
+    const index = meta ? JSON.parse(b64decode(meta.content)) : {};
+    if (mutate(index) === false) return;    // rien à changer
+    const body = { message, content: b64encode(JSON.stringify(index, null, 2)),
+                   branch: gh.branch };
+    if (meta && meta.sha) body.sha = meta.sha;
+    const r = await fetch(`${gh.base}/servers/index.json`, {
+      method: "PUT", headers: gh.headers({ "Content-Type": "application/json" }),
+      body: JSON.stringify(body),
+    });
+    if (r.ok) return;
+    const text = await r.text();
+    if ((r.status === 409 || r.status === 422) && attempt < 3) continue;
+    throw err(r.status, `GitHub PUT servers/index.json: ${text}`);
+  }
+}
+
 async function upsertIndex(gh, address, id) {
-  const meta = await gh.getFileMeta("servers/index.json").catch(() => null);
-  const index = meta ? JSON.parse(b64decode(meta.content)) : {};
-  index[address] = id;
-  await gh.putFile("servers/index.json", JSON.stringify(index, null, 2),
-                   `Index ${address} -> ${id}`, meta && meta.sha);
+  await withIndexRetry(gh, `Index ${address} -> ${id}`, (index) => {
+    index[address] = id;
+  });
 }
 
 async function removeFromIndex(gh, id) {
-  const meta = await gh.getFileMeta("servers/index.json").catch(() => null);
-  if (!meta) return;
-  const index = JSON.parse(b64decode(meta.content));
-  for (const k of Object.keys(index)) if (index[k] === id) delete index[k];
-  await gh.putFile("servers/index.json", JSON.stringify(index, null, 2),
-                   `Nettoyage index (${id})`, meta.sha);
+  await withIndexRetry(gh, `Nettoyage index (${id})`, (index) => {
+    let changed = false;
+    for (const k of Object.keys(index)) if (index[k] === id) { delete index[k]; changed = true; }
+    return changed;   // false = index déjà propre, pas d'écriture
+  });
 }
 
 // --------------------------------------------------------------------------
@@ -457,23 +477,52 @@ class GitHub {
   async putFile(path, contentUtf8, message, sha) {
     return this.putFileBase64(path, b64encode(contentUtf8), message, false, sha);
   }
+  // Sha d'un fichier, FIABLE même pour les gros fichiers : le GET contents JSON
+  // échoue au-delà de 1 Mo (« too_large ») — dans ce cas on liste le dossier
+  // parent, qui renvoie le sha de chaque entrée quelle que soit sa taille.
+  // Renvoie null si le fichier n'existe pas.
+  async fileSha(path) {
+    try {
+      const meta = await this.getFileMeta(path);
+      return meta ? meta.sha : null;
+    } catch {
+      const i = path.lastIndexOf("/");
+      const dir = i < 0 ? "" : path.slice(0, i);
+      const name = path.slice(i + 1);
+      const items = await this.listDir(dir).catch(() => []);
+      const it = items.find((x) => x.name === name);
+      return it ? it.sha : null;
+    }
+  }
   async putFileBase64(path, base64, message, skipIfExists = false, sha) {
     if (skipIfExists) {
-      const existing = await this.getFileMeta(path).catch(() => null);
-      if (existing) return { skipped: true };
+      if (await this.fileSha(path)) return { skipped: true };
       sha = undefined;
     } else if (sha === undefined) {
-      const existing = await this.getFileMeta(path).catch(() => null);
-      sha = existing ? existing.sha : undefined;
+      sha = (await this.fileSha(path)) || undefined;
     }
-    const body = { message, content: base64, branch: this.branch };
-    if (sha) body.sha = sha;
-    const r = await fetch(`${this.base}/${path}`, {
-      method: "PUT", headers: this.headers({ "Content-Type": "application/json" }),
-      body: JSON.stringify(body),
-    });
-    if (!r.ok) throw err(r.status, `GitHub PUT ${path}: ${await r.text()}`);
-    return r.json();
+    // Jusqu'à 3 tentatives : les 409/422 signalent un sha périmé ou manquant
+    // (écriture concurrente, gros fichier) → on relit le sha frais et on rejoue.
+    // NB : sûr uniquement parce que le contenu ne dépend pas de l'existant ;
+    // les read-modify-write (index.json, roles.json) rejouent TOUT leur cycle
+    // via withIndexRetry() au lieu de compter sur ce retry-ci.
+    for (let attempt = 0; ; attempt++) {
+      const body = { message, content: base64, branch: this.branch };
+      if (sha) body.sha = sha;
+      const r = await fetch(`${this.base}/${path}`, {
+        method: "PUT", headers: this.headers({ "Content-Type": "application/json" }),
+        body: JSON.stringify(body),
+      });
+      if (r.ok) return r.json();
+      const text = await r.text();
+      if ((r.status === 409 || r.status === 422) && attempt < 2) {
+        const fresh = await this.fileSha(path);
+        if (skipIfExists && fresh) return { skipped: true };  // apparu entre-temps
+        sha = fresh || undefined;
+        continue;
+      }
+      throw err(r.status, `GitHub PUT ${path}: ${text}`);
+    }
   }
   async deleteFile(path, message) {
     const meta = await this.getFileMeta(path);
