@@ -2,6 +2,7 @@
 
 #include <QDir>
 #include <QFile>
+#include <QFileInfo>
 #include <QRegularExpression>
 #include <algorithm>
 #include <QJsonArray>
@@ -96,6 +97,8 @@ void Bridge::handle(const QJsonObject &request)
         devLogin(id, params);
     } else if (method == "startDownload") {
         startDownload(id, params);
+    } else if (method == "cancelDownload") {
+        cancelDownload(id, params);
     } else if (method == "launch") {
         launch(id, params);
     } else if (method == "stopGame") {
@@ -791,6 +794,7 @@ void Bridge::startDownload(int id, const QJsonObject &params)
                                     config::token(), config::dataRoot(), config::javaPath(), this);
     mgr->setForceJava(config::forceCustomJava());
     if (useWorker()) mgr->setWorkerUrl(config::workerUrl());
+    m_downloads.insert(serverId, ActiveDownload{mgr, nullptr, id});
 
     // Session neutre : le téléchargement des fichiers ne dépend pas de l'identité
     // (seul le LANCEMENT a besoin du vrai token).
@@ -800,21 +804,32 @@ void Bridge::startDownload(int id, const QJsonObject &params)
     connect(mgr, &InstanceManager::progress, this, [this, serverId](const QString &s) {
         emit event(QJsonObject{{"event", "downloadStatus"}, {"id", serverId}, {"step", s}});
     });
-    connect(mgr, &InstanceManager::failed, this, [this, id, mgr](const QString &e) {
+    connect(mgr, &InstanceManager::failed, this, [this, id, serverId, mgr](const QString &e) {
+        m_downloads.remove(serverId);
         replyError(id, e);
         mgr->deleteLater();
     });
     connect(mgr, &InstanceManager::planReady, this,
             [this, id, serverId, mgr](const LaunchPlan &plan) {
         auto *dl = new Downloader(6, this);
+        m_downloads.insert(serverId, ActiveDownload{mgr, dl, id});
 
         connect(dl, &Downloader::progressBytes, this, [this, serverId](qint64 done, qint64 total) {
             emit event(QJsonObject{{"event", "downloadProgress"}, {"id", serverId},
                                    {"doneMb", done / 1048576.0}, {"totalMb", total / 1048576.0},
                                    {"percent", total > 0 ? int(done * 100 / total) : 0}});
         });
+        // Annulation : on répond à la requête d'origine et on nettoie (les fichiers
+        // déjà téléchargés restent — hashés, ils seront repris au prochain essai).
+        connect(dl, &Downloader::aborted, this, [this, id, serverId, mgr, dl]() {
+            m_downloads.remove(serverId);
+            replyOk(id, QJsonObject{{"id", serverId}, {"cancelled", true}});
+            dl->deleteLater();
+            mgr->deleteLater();
+        });
         connect(dl, &Downloader::finished, this,
                 [this, id, serverId, plan, mgr, dl](int ok, int failed) {
+            m_downloads.remove(serverId);
             // Marque les mods du repo comme gérés par le launcher (sync non-destructif).
             SyncManager sync(plan.gameDir);
             QStringList assetPaths;
@@ -835,6 +850,78 @@ void Bridge::startDownload(int id, const QJsonObject &params)
 
     mgr->plan(serverId, session);
 }
+
+// VRAIE annulation : coupe les transferts en cours (Downloader::abort) ou stoppe
+// la planification (destruction du manager). Sans elle, cliquer « Annuler » ne
+// faisait que masquer la barre côté UI pendant que tout continuait en fond.
+void Bridge::cancelDownload(int id, const QJsonObject &params)
+{
+    const QString serverId = params.value("id").toString();
+    const auto it = m_downloads.constFind(serverId);
+    if (it == m_downloads.constEnd()) {
+        replyOk(id, QJsonObject{{"id", serverId}, {"cancelled", false}});
+        return;
+    }
+    const ActiveDownload ad = it.value();
+    if (auto *dl = qobject_cast<Downloader *>(ad.dl.data())) {
+        dl->abort();   // → signal aborted() : répond à la requête startDownload et nettoie
+    } else if (!ad.mgr.isNull()) {
+        // Encore en phase de planification : détruire le manager coupe ses
+        // requêtes (parentées) et empêche planReady de démarrer les transferts.
+        // On répond aussi à la requête startDownload d'origine (sinon timeout JS).
+        m_downloads.remove(serverId);
+        ad.mgr->deleteLater();
+        if (ad.requestId >= 0)
+            replyOk(ad.requestId, QJsonObject{{"id", serverId}, {"cancelled", true}});
+    }
+    replyOk(id, QJsonObject{{"id", serverId}, {"cancelled", true}});
+    emit event(QJsonObject{{"event", "downloadCancelled"}, {"id", serverId}});
+}
+
+namespace {
+// --- NBT minimal (non compressé) pour écrire servers.dat -------------------
+void nbtU16(QByteArray &b, quint16 v) { b.append(char(v >> 8)); b.append(char(v & 0xFF)); }
+void nbtStr(QByteArray &b, const QByteArray &s) { nbtU16(b, quint16(s.size())); b.append(s); }
+void nbtNamedStr(QByteArray &b, const QByteArray &name, const QByteArray &value)
+{
+    b.append(char(8));   // TAG_String
+    nbtStr(b, name);
+    nbtStr(b, value);
+}
+
+// Réglages par défaut d'une instance, créés SEULEMENT s'ils n'existent pas
+// encore (jamais d'écrasement des choix du joueur) :
+//  - options.txt : jeu en français (lang:fr_fr) ;
+//  - servers.dat : le serveur de l'instance pré-enregistré dans la liste
+//    multijoueur (NBT non compressé : compound racine → liste "servers").
+void writeDefaultGameFiles(const QString &gameDir, const QString &srvName,
+                           const QString &srvAddress)
+{
+    const QString optionsPath = QDir(gameDir).filePath("options.txt");
+    if (!QFileInfo::exists(optionsPath)) {
+        QFile f(optionsPath);
+        if (f.open(QIODevice::WriteOnly | QIODevice::Text))
+            f.write("lang:fr_fr\n");
+    }
+
+    const QString serversPath = QDir(gameDir).filePath("servers.dat");
+    if (!QFileInfo::exists(serversPath) && !srvAddress.isEmpty()) {
+        QByteArray nbt;
+        nbt.append(char(10)); nbtStr(nbt, "");           // TAG_Compound racine ""
+        nbt.append(char(9));  nbtStr(nbt, "servers");    // TAG_List "servers"
+        nbt.append(char(10));                            // ...de TAG_Compound
+        nbt.append(char(0)); nbt.append(char(0)); nbt.append(char(0)); nbt.append(char(1));  // count = 1
+        nbtNamedStr(nbt, "ip", srvAddress.toUtf8());
+        nbtNamedStr(nbt, "name",
+                    (srvName.isEmpty() ? srvAddress : srvName).toUtf8());
+        nbt.append(char(0));                             // fin du compound élément
+        nbt.append(char(0));                             // fin de la racine
+        QFile f(serversPath);
+        if (f.open(QIODevice::WriteOnly))
+            f.write(nbt);
+    }
+}
+} // namespace
 
 void Bridge::launch(int id, const QJsonObject &params)
 {
@@ -888,6 +975,9 @@ void Bridge::launch(int id, const QJsonObject &params)
 
             // Prépare les dossiers puis démarre le jeu (QProcess détaché).
             QDir().mkpath(plan.gameDir);
+            // Premier lancement : jeu en français + serveur pré-enregistré dans
+            // la liste multijoueur (jamais écrasé si le joueur a déjà des réglages).
+            writeDefaultGameFiles(plan.gameDir, plan.server.name, plan.server.address);
             QStringList cmd = plan.launchCommand;
             if (cmd.isEmpty()) { replyError(id, "Commande de lancement vide."); return; }
             const QString program = cmd.takeFirst();
@@ -911,6 +1001,16 @@ void Bridge::launch(int id, const QJsonObject &params)
 
             auto *proc = new QProcess(this);
             proc->setWorkingDirectory(plan.gameDir);
+            // Logs du jeu : stdout et stderr fusionnés, poussés ligne par ligne
+            // à l'UI (panneau « Logs » de la page serveur). Bornés côté UI.
+            proc->setProcessChannelMode(QProcess::MergedChannels);
+            connect(proc, &QProcess::readyReadStandardOutput, this, [this, serverId, proc]() {
+                while (proc->canReadLine()) {
+                    const QString line = QString::fromUtf8(proc->readLine()).trimmed();
+                    if (!line.isEmpty())
+                        emit event(QJsonObject{{"event", "gameLog"}, {"id", serverId}, {"line", line}});
+                }
+            });
             connect(proc, &QProcess::started, this, [this, id, serverId, proc]() {
                 m_running.insert(serverId, proc);   // suivi pour pouvoir le fermer
                 emit event(QJsonObject{{"event", "launched"}, {"id", serverId}});

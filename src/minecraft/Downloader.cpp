@@ -63,8 +63,25 @@ void Downloader::start(const QVector<DownloadTask> &tasks)
     pump();
 }
 
+void Downloader::abort()
+{
+    if (m_aborted)
+        return;
+    m_aborted = true;
+    m_queue.clear();
+    // abort() déclenche finished() de chaque reply avec OperationCanceledError ;
+    // le handler voit m_aborted et s'arrête sans compter ni écrire.
+    const auto replies = m_inFlight;
+    for (QNetworkReply *r : replies)
+        r->abort();
+    m_inFlight.clear();
+    emit aborted();
+}
+
 void Downloader::pump()
 {
+    if (m_aborted)
+        return;
     while (m_active < m_maxParallel && !m_queue.isEmpty()) {
         const DownloadTask task = m_queue.dequeue();
 
@@ -88,9 +105,14 @@ void Downloader::startOne(const DownloadTask &task)
         req.setRawHeader(h.first, h.second);
 
     QNetworkReply *reply = m_net->get(req);
+    m_inFlight.append(reply);
     connect(reply, &QNetworkReply::finished, this, [this, reply, task]() {
         reply->deleteLater();
+        m_inFlight.removeOne(reply);
         --m_active;
+
+        if (m_aborted)
+            return;   // annulé : on ne compte plus rien, l'appelant a repris la main
 
         if (reply->error() != QNetworkReply::NoError) {
             onOneDone(false, task.dest, reply->errorString(), task.size);

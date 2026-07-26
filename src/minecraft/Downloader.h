@@ -38,6 +38,11 @@ public:
 
     void start(const QVector<DownloadTask> &tasks);
 
+    // Annule tout : vide la file, coupe les requêtes en cours. N'émet PAS
+    // finished() (l'appelant décide de la suite) ; aborted() est émis à la place.
+    void abort();
+    bool isAborted() const { return m_aborted; }
+
     // Hash hex d'un fichier (par blocs). Vide si illisible.
     static QString hashFile(const QString &path, QCryptographicHash::Algorithm algo);
     static QString sha1File(const QString &path);  // raccourci SHA1
@@ -47,6 +52,7 @@ signals:
     void progressBytes(qint64 doneBytes, qint64 totalBytes);
     void fileFailed(const QString &dest, const QString &reason);
     void finished(int ok, int failed);
+    void aborted();
 
 private:
     void pump();
@@ -56,6 +62,8 @@ private:
 
     QNetworkAccessManager *m_net;
     int m_maxParallel;
+    bool m_aborted = false;
+    QVector<QNetworkReply *> m_inFlight;   // requêtes actives (pour abort)
     int m_active = 0;
     int m_total  = 0;
     int m_done   = 0;

@@ -4,6 +4,7 @@
 #include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
+#include <QPointer>
 #include <QString>
 #include <functional>
 
@@ -50,6 +51,7 @@ private:
     void resolveRoleAndReply(int id, const lami::MinecraftSession &s);   // rôle (Worker/repli) → réponse
     void devLogin(int id, const QJsonObject &params);   // PROVISOIRE (avant approbation Azure)
     void startDownload(int id, const QJsonObject &params);
+    void cancelDownload(int id, const QJsonObject &params);
     void launch(int id, const QJsonObject &params);
     void stopGame(int id, const QJsonObject &params);
     void checkUpdate(int id, const QJsonObject &params);
@@ -95,6 +97,15 @@ private:
     MicrosoftAuth   *m_auth = nullptr;
     MinecraftSession m_session;   // session authentifiée (source de vérité de l'UUID)
     QHash<QString, QProcess *> m_running;   // jeux en cours, par id de serveur
+
+    // Téléchargements en cours, par id de serveur : permet une VRAIE annulation
+    // (pendant la planification via mgr, pendant les transferts via dl).
+    struct ActiveDownload {
+        QPointer<QObject> mgr;   // InstanceManager (phase de planification)
+        QPointer<QObject> dl;    // Downloader (phase de transfert)
+        int requestId = -1;      // id de la requête startDownload (pour lui répondre à l'annulation)
+    };
+    QHash<QString, ActiveDownload> m_downloads;
 };
 
 // Sérialise un ServerInfo au format attendu par l'UI (mods/plugins/... + loader lisible).

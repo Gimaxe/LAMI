@@ -495,6 +495,24 @@
 
                     </div>
 
+                    <!-- Accordéon : Logs du lancement Minecraft (sous les assets) -->
+                    <div class="flex justify-center my-1 flex-shrink-0">
+                        <button onclick="toggleGameLogsPanel()" class="flex items-center gap-2 px-6 py-3 bg-neutral-950/50 hover:bg-neutral-950 border border-neutral-800 hover:border-brand-500/30 rounded-2xl text-xs font-bold text-neutral-400 hover:text-brand-500 transition-all cursor-pointer">
+                            <i data-lucide="terminal" class="w-4 h-4"></i>
+                            <span id="toggle-game-logs-text">Afficher les logs du jeu</span>
+                            <i data-lucide="chevron-down" id="toggle-game-logs-icon" class="w-4 h-4 transition-transform duration-300"></i>
+                        </button>
+                    </div>
+                    <div id="game-logs-panel" class="hidden flex-col gap-2 animate-fade-in">
+                        <div class="flex items-center justify-between px-1">
+                            <span class="text-[10px] font-bold text-neutral-500 uppercase tracking-widest">Logs de l'instance Minecraft</span>
+                            <button onclick="clearGameLogs()" class="text-[10px] font-bold text-neutral-500 hover:text-red-400 uppercase tracking-widest transition cursor-pointer">Vider</button>
+                        </div>
+                        <div id="game-logs-output" class="bg-black/60 border border-neutral-800/80 rounded-2xl p-4 h-64 overflow-y-auto font-mono text-[11px] leading-relaxed text-neutral-300 whitespace-pre-wrap break-all">
+                            <span class="text-neutral-600 italic" id="game-logs-empty">Aucun log pour le moment — lance le jeu pour voir sa sortie ici.</span>
+                        </div>
+                    </div>
+
                 </div>
 
             </div>
@@ -1210,7 +1228,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.42.0";
+        const LAMI_VERSION = "0.43.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1515,6 +1533,10 @@
                     if (m.id === runningId) runningId = null;
                     showToast("Minecraft fermé.", "info");
                     setPlayButtonPlay();
+                    appendGameLog(m.id, '--- Minecraft fermé ---');
+                });
+                lami.on('gameLog', function (m) {
+                    appendGameLog(m.id, m.line);
                 });
                 lami.on('updateProgress', function (m) {
                     const bar = document.getElementById('update-progress-bar');
@@ -2512,6 +2534,7 @@
                 renderInstalledServerAssets(server);
                 // Le bouton reflète l'état réel : Fermer si CE serveur tourne, sinon Lancer.
                 syncPlayButton(server.id);
+                if (isGameLogsPanelVisible) renderGameLogs();   // logs du serveur affiché
             } else {
                 // Si non installé, on affiche l'interface d'installation et on montre la barre de recherche
                 document.getElementById('search-bar-container').classList.remove('hidden');
@@ -2678,6 +2701,12 @@
                 clearInterval(activeDownload.intervalId);
             }
 
+            // Annulation RÉELLE côté backend : coupe les transferts en cours
+            // (sinon le téléchargement continuait en fond, seule l'UI se cachait).
+            if (window.lami && window.lami.connected) {
+                lami.call('cancelDownload', { id: activeDownload.serverId }).catch(function () {});
+            }
+
             showToast(`Téléchargement de "${srv.name}" annulé.`, "info");
 
             activeDownload.serverId = null;
@@ -2769,6 +2798,74 @@
             }
             isAssetsPanelVisible = !isAssetsPanelVisible;
             lucide.createIcons();
+        }
+
+        // --- LOGS DU JEU (panneau sous les assets de la page serveur) ---
+        // Buffer par serveur, borné à 500 lignes (les plus anciennes sortent).
+        const gameLogs = {};
+        const GAME_LOGS_MAX = 500;
+        let isGameLogsPanelVisible = false;
+
+        function appendGameLog(serverId, line) {
+            if (!serverId || !line) return;
+            if (!gameLogs[serverId]) gameLogs[serverId] = [];
+            gameLogs[serverId].push(line);
+            if (gameLogs[serverId].length > GAME_LOGS_MAX) gameLogs[serverId].shift();
+
+            // N'affiche en direct que si le panneau est ouvert sur CE serveur.
+            if (!isGameLogsPanelVisible) return;
+            if (!currentlySelectedServer || currentlySelectedServer.id !== serverId) return;
+            const out = document.getElementById('game-logs-output');
+            if (!out) return;
+            const empty = document.getElementById('game-logs-empty');
+            if (empty) empty.remove();
+            const div = document.createElement('div');
+            div.textContent = line;
+            out.appendChild(div);
+            while (out.childElementCount > GAME_LOGS_MAX) out.removeChild(out.firstChild);
+            out.scrollTop = out.scrollHeight;   // suit la fin, comme une console
+        }
+
+        function renderGameLogs() {
+            const out = document.getElementById('game-logs-output');
+            if (!out) return;
+            out.innerHTML = '';
+            const lines = (currentlySelectedServer && gameLogs[currentlySelectedServer.id]) || [];
+            if (lines.length === 0) {
+                out.innerHTML = '<span class="text-neutral-600 italic" id="game-logs-empty">Aucun log pour le moment — lance le jeu pour voir sa sortie ici.</span>';
+                return;
+            }
+            lines.forEach(function (l) {
+                const div = document.createElement('div');
+                div.textContent = l;
+                out.appendChild(div);
+            });
+            out.scrollTop = out.scrollHeight;
+        }
+
+        function toggleGameLogsPanel() {
+            const panel = document.getElementById('game-logs-panel');
+            const icon = document.getElementById('toggle-game-logs-icon');
+            const text = document.getElementById('toggle-game-logs-text');
+            isGameLogsPanelVisible = !isGameLogsPanelVisible;
+            if (isGameLogsPanelVisible) {
+                panel.classList.remove('hidden');
+                panel.classList.add('flex');
+                icon.style.transform = "rotate(180deg)";
+                text.innerText = "Masquer les logs du jeu";
+                renderGameLogs();
+            } else {
+                panel.classList.add('hidden');
+                panel.classList.remove('flex');
+                icon.style.transform = "rotate(0deg)";
+                text.innerText = "Afficher les logs du jeu";
+            }
+            lucide.createIcons();
+        }
+
+        function clearGameLogs() {
+            if (currentlySelectedServer) delete gameLogs[currentlySelectedServer.id];
+            renderGameLogs();
         }
 
         // --- SUPPRESSION DU SERVEUR DU LAUNCHER ---
@@ -3304,8 +3401,11 @@
             userServers.forEach(srv => {
                 const totalFiles = getTotalServerFilesCount(srv);
                 const row = document.createElement('div');
-                row.className = "p-4 bg-neutral-950/40 border border-neutral-800/60 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-neutral-700 transition duration-200 w-full";
-                
+                row.className = "p-4 bg-neutral-950/40 border border-neutral-800/60 rounded-2xl flex flex-col md:flex-row md:items-center justify-between gap-4 hover:border-brand/40 transition duration-200 w-full cursor-pointer";
+                // Cliquer la carte ouvre la page du serveur (comme « Rejoindre ») ;
+                // les boutons Modifier/Supprimer stoppent la propagation.
+                row.addEventListener('click', function () { selectServer(srv); });
+
                 row.innerHTML = `
                     <div class="flex-1 min-w-0 grid grid-cols-1 md:grid-cols-4 gap-4 items-center">
                         <!-- Nom et IP -->
@@ -3344,11 +3444,11 @@
                             <span>Suppression…</span>
                         </span>
                         ` : `
-                        <button onclick="openEditConfigPage('${srv.id}')" class="px-3 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-850 hover:border-neutral-700 text-neutral-300 font-bold rounded-xl text-xs transition duration-150 flex items-center gap-1 cursor-pointer">
+                        <button onclick="event.stopPropagation(); openEditConfigPage('${srv.id}')" class="px-3 py-2 bg-neutral-900 hover:bg-neutral-800 border border-neutral-850 hover:border-neutral-700 text-neutral-300 font-bold rounded-xl text-xs transition duration-150 flex items-center gap-1 cursor-pointer">
                             <i data-lucide="edit-3" class="w-3.5 h-3.5 text-brand"></i>
                             <span>Modifier</span>
                         </button>
-                        <button onclick="deletePublishedServerCompletely('${srv.id}')" class="px-3 py-2 bg-red-950/20 hover:bg-red-900/20 border border-red-950/40 hover:border-red-500/30 text-red-400 font-bold rounded-xl text-xs transition duration-150 flex items-center gap-1 cursor-pointer">
+                        <button onclick="event.stopPropagation(); deletePublishedServerCompletely('${srv.id}')" class="px-3 py-2 bg-red-950/20 hover:bg-red-900/20 border border-red-950/40 hover:border-red-500/30 text-red-400 font-bold rounded-xl text-xs transition duration-150 flex items-center gap-1 cursor-pointer">
                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                             <span>Supprimer</span>
                         </button>
