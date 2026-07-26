@@ -542,13 +542,13 @@
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Type de Loader</label>
                             <select id="pub-loader" onchange="onPubLoaderChange()" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition cursor-pointer">
                                 <option value="Vanilla">Vanilla (Aucun loader)</option>
-                                <optgroup label="📂 Mod Loaders">
+                                <optgroup label="Mod Loaders">
                                     <option value="Forge">Forge</option>
                                     <option value="Fabric" selected>Fabric</option>
                                     <option value="NeoForge">NeoForge</option>
                                     <option value="Quilt">Quilt</option>
                                 </optgroup>
-                                <optgroup label="🔌 Plugin Loaders">
+                                <optgroup label="Plugin Loaders">
                                     <option value="Paper">Paper</option>
                                     <option value="Spigot">Spigot</option>
                                     <option value="Purpur">Purpur</option>
@@ -556,8 +556,8 @@
                             </select>
                         </div>
 
-                        <!-- Version du Loader (liste + saisie manuelle) -->
-                        <div class="flex flex-col gap-1.5">
+                        <!-- Version du Loader (liste + saisie manuelle) ; masquée en Vanilla -->
+                        <div id="pub-loader-version-wrap" class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Version du Loader</label>
                             <input type="text" id="pub-loader-version" list="pub-loader-version-list" placeholder="Dernière (auto)" autocomplete="off" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
                             <datalist id="pub-loader-version-list"></datalist>
@@ -720,17 +720,17 @@
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Type de Loader</label>
                             <select id="edit-loader" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800/80 rounded-xl px-4 py-3 text-sm text-white outline-none transition cursor-pointer">
                                 <option value="Vanilla">Vanilla (Aucun loader)</option>
-                                <optgroup label="📂 Mod Loaders">
+                                <optgroup label="Mod Loaders">
                                     <option value="Forge">Forge</option>
                                     <option value="Fabric">Fabric</option>
                                     <option value="NeoForge">NeoForge</option>
                                 </optgroup>
-                                <optgroup label="🔌 Plugin Loaders">
+                                <optgroup label="Plugin Loaders">
                                     <option value="Paper">Paper</option>
                                     <option value="Spigot">Spigot</option>
                                     <option value="Purpur">Purpur</option>
                                 </optgroup>
-                                <optgroup label="⚙️ Hybrides (Plugins + Mods)">
+                                <optgroup label="Hybrides (Plugins + Mods)">
                                     <option value="Mohist">Mohist</option>
                                     <option value="Arclight">Arclight</option>
                                     <option value="Magma">Magma</option>
@@ -1210,7 +1210,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.41.1";
+        const LAMI_VERSION = "0.42.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -3068,6 +3068,7 @@
         }
         // Charge les versions du loader sélectionné dans le formulaire de publication.
         function loadPubLoaderVersions() {
+            updatePubLoaderVersionVisibility();   // couvre aussi les bascules programmatiques vers Vanilla
             if (!window.lami || !window.lami.connected) return;
             const loader = document.getElementById('pub-loader').value;
             const mc = selectedVersion('pub-version');
@@ -3075,7 +3076,16 @@
                 fillVersionSelect('pub-loader-version', r.versions || []);
             }).catch(function () {});
         }
-        function onPubLoaderChange() { loadPubLoaderVersions(); }
+        // Vanilla = pas de loader, donc pas de version de loader : champ masqué
+        // (et vidé, pour ne pas envoyer une valeur périmée à la publication).
+        function updatePubLoaderVersionVisibility() {
+            const wrap = document.getElementById('pub-loader-version-wrap');
+            const inp = document.getElementById('pub-loader-version');
+            const isVanilla = document.getElementById('pub-loader').value === 'Vanilla';
+            if (wrap) wrap.style.display = isVanilla ? 'none' : '';
+            if (isVanilla && inp) inp.value = '';
+        }
+        function onPubLoaderChange() { updatePubLoaderVersionVisibility(); loadPubLoaderVersions(); }
 
         // Masque, dans la liste des loaders, ceux qui n'ont AUCUNE version compatible
         // avec la version Minecraft choisie (ex. NeoForge n'existe pas pour 1.20.1).

@@ -2,11 +2,15 @@ name = "lami-worker"
 main = "src/index.js"
 compatibility_date = "2024-11-01"
 
-# Variables NON secrètes (le repo-BDD).
+# Variables NON secrètes (le repo-BDD + l'URL du relais d'identité).
 [vars]
 GH_OWNER = "Gimaxe"
 GH_REPO = "LAMI-db"
 GH_BRANCH = "main"
+# Relais Deno Deploy qui vérifie les tokens Minecraft auprès de Mojang
+# (les IP des Workers sont bloquées par Mojang ; celles de Deno non).
+IDENTITY_RELAY_URL = "https://lami-identity.gimaxe.deno.net"
 
-# Le secret GITHUB_TOKEN se pose HORS de ce fichier (jamais committé) :
-#   wrangler secret put GITHUB_TOKEN
+# Les secrets se posent HORS de ce fichier (jamais committés) :
+#   wrangler secret put GITHUB_TOKEN    (PAT GitHub, écriture LAMI-db)
+#   wrangler secret put RELAY_SECRET    (même valeur que sur Deno Deploy)

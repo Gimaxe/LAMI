@@ -41,6 +41,27 @@ export default {
         if (path === "/servers") return cors(json(await handleListServers(gh)));
         if (path === "/server")  return cors(json(await handleGetServer(gh, url.searchParams.get("id"))));
         if (path === "/resolve") return cors(json(await handleResolve(gh, url.searchParams.get("ip"))));
+        // DIAGNOSTIC TEMPORAIRE : teste quels domaines d'auth Mojang/Xbox sont
+        // joignables depuis le réseau des Workers (certains bloquent Cloudflare).
+        // Aucune donnée sensible : requêtes anonymes, on ne renvoie que les statuts.
+        if (path === "/diag-net") {
+          const targets = {
+            minecraftservices: "https://api.minecraftservices.com/minecraft/profile",
+            sessionserver: "https://sessionserver.mojang.com/session/minecraft/hasJoined?username=x&serverId=x",
+            xbl_user: "https://user.auth.xboxlive.com/user/authenticate",
+            mojang_api: "https://api.mojang.com/users/profiles/minecraft/gimaxe",
+          };
+          const out = {};
+          for (const [k, u] of Object.entries(targets)) {
+            try {
+              const r = await fetch(u, { headers: { "User-Agent": "LAMI-diag" } });
+              const ct = r.headers.get("content-type") || "?";
+              const srv = r.headers.get("server") || "?";
+              out[k] = `HTTP ${r.status} | server=${srv} | ct=${ct}`;
+            } catch (e) { out[k] = "ERREUR: " + (e.message || e); }
+          }
+          return cors(json(out));
+        }
         return cors(json({ error: "Route inconnue: " + path }, 404));
       } catch (e) {
         return cors(json({ error: e.message || String(e) }, e.status || 500));
@@ -56,12 +77,13 @@ export default {
 
     const token = (body.token || "").trim();
     if (!token) return cors(json({ error: "token manquant" }, 401));
-    const identity = await verifyIdentity(token);         // JAMAIS mis en cache
-    if (!identity) return cors(json({ error: "Token Minecraft invalide ou expiré." }, 401));
-    const uuid = normalizeUuid(identity.id);
-    const role = await resolveRole(gh, uuid);             // rôle recalculé à chaque appel
 
     try {
+      const identity = await verifyIdentity(token, env);  // JAMAIS mis en cache
+      if (!identity) return cors(json({ error: "Token Minecraft invalide ou expiré." }, 401));
+      const uuid = normalizeUuid(identity.id);
+      const role = await resolveRole(gh, uuid);           // rôle recalculé à chaque appel
+
       switch (path) {
         case "/whoami":
           return cors(json({ uuid, name: identity.name, role }));
@@ -173,7 +195,27 @@ async function handleUpload(gh, body) {
 // --------------------------------------------------------------------------
 //  Vérification d'identité : le Worker fait autorité via Mojang.
 // --------------------------------------------------------------------------
-async function verifyIdentity(minecraftToken) {
+// Les IP des Workers sont bloquées par tous les domaines Mojang (mesuré via
+// /diag-net) : la vérification passe donc par le RELAIS (Deno Deploy, IP non
+// bloquées), authentifié par RELAY_SECRET. L'appel direct Mojang reste en repli
+// si aucun relais n'est configuré (utile pour les tests locaux hors Cloudflare).
+async function verifyIdentity(minecraftToken, env) {
+  if (env && env.IDENTITY_RELAY_URL) {
+    const r = await fetch(env.IDENTITY_RELAY_URL.replace(/\/+$/, "") + "/verify", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-relay-secret": env.RELAY_SECRET || "",
+      },
+      body: JSON.stringify({ token: minecraftToken }),
+    });
+    // Panne/config du relais ≠ token invalide : on le dit clairement à l'UI.
+    if (!r.ok) throw err(502, `Relais d'identité indisponible (HTTP ${r.status}).`);
+    const d = await r.json().catch(() => null);
+    if (!d || !d.ok) return null;         // token invalide/expiré
+    return { id: d.id, name: d.name };
+  }
+
   const r = await fetch(MOJANG_PROFILE, {
     headers: { Authorization: "Bearer " + minecraftToken },
   });
