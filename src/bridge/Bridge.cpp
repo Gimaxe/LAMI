@@ -789,6 +789,12 @@ void Bridge::startDownload(int id, const QJsonObject &params)
         replyError(id, "Identifiant de serveur manquant.");
         return;
     }
+    // Jamais deux téléchargements du même serveur en parallèle : sinon
+    // « Annuler » ne tue que le plus récent et l'autre continue en fond.
+    if (m_downloads.contains(serverId)) {
+        replyError(id, "Un téléchargement de ce serveur est déjà en cours.");
+        return;
+    }
 
     auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
                                     config::token(), config::dataRoot(), config::javaPath(), this);

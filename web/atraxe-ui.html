@@ -1155,6 +1155,25 @@
     </main>
 
     <!-- ÉCRAN DE CONNEXION (bloque l'app tant qu'on n'est pas connecté) -->
+    <!-- Modale de confirmation générique (remplace confirm() natif) -->
+    <div id="confirm-modal" class="hidden fixed inset-0 z-[120] flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
+        <div class="bg-dark-card border border-neutral-800 rounded-3xl p-8 max-w-md w-full mx-4 flex flex-col gap-6 shadow-2xl animate-fade-in">
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 rounded-2xl bg-red-950/40 border border-red-500/20 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="alert-triangle" class="w-6 h-6 text-red-400"></i>
+                </div>
+                <div class="min-w-0">
+                    <h2 id="confirm-modal-title" class="text-lg font-black text-white">Confirmer</h2>
+                    <p id="confirm-modal-message" class="text-sm text-neutral-400 mt-1.5 leading-relaxed"></p>
+                </div>
+            </div>
+            <div class="flex gap-3 justify-end">
+                <button id="confirm-modal-cancel" class="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-300 font-bold rounded-xl text-sm transition-all cursor-pointer">Annuler</button>
+                <button id="confirm-modal-ok" class="px-5 py-2.5 bg-red-600 hover:bg-red-500 active:bg-red-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-red-500/20 cursor-pointer">Supprimer</button>
+            </div>
+        </div>
+    </div>
+
     <div id="login-modal" class="hidden fixed inset-0 z-[100] flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
         <div class="bg-dark-card border border-neutral-800 rounded-3xl p-10 max-w-md w-full mx-4 flex flex-col items-center gap-6 shadow-2xl">
             <div class="w-16 h-16 rounded-2xl overflow-hidden flex items-center justify-center bg-gradient-to-br from-brand-600 to-brand-700 shadow-lg shadow-brand-500/20">
@@ -1228,7 +1247,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.43.0";
+        const LAMI_VERSION = "0.44.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1549,14 +1568,33 @@
                     const srv = activeDownload.serverObj;
                     resetDownloadState();
                     if (srv) {
-                        srv.installed = true;
-                        installedIds.add(m.id);   // apparaît dans « Mes Serveurs »
-                        if (m.failed === 0) showToast(`Installation de "${srv.name}" terminée !`, "success");
-                        else showToast(`Installation terminée avec ${m.failed} échec(s).`, "error");
+                        if (m.failed === 0) {
+                            srv.installed = true;
+                            installedIds.add(m.id);   // apparaît dans « Mes Serveurs »
+                            showToast(`Installation de "${srv.name}" terminée !`, "success");
+                        } else {
+                            // Des fichiers ont échoué (ex. mod absent de la banque) :
+                            // on NE marque PAS installé — sinon dossiers vides mais
+                            // launcher qui affiche « installé » avec des mods fantômes.
+                            showToast(`Installation incomplète : ${m.failed} fichier(s) en échec. Réessaie (ou republie le serveur).`, "error");
+                        }
                     }
                     renderServersSidebar();
-                    // On NE redirige PAS vers la page du serveur : l'utilisateur
-                    // reste où il est, l'installation s'est faite en arrière-plan.
+                    // Met à jour la zone d'action (elle affichait encore
+                    // « Installation en cours » à 100% sinon), et bascule la page
+                    // vers le tableau de bord installé si on regarde CE serveur.
+                    if (currentlySelectedServer && currentlySelectedServer.id === m.id
+                        && currentTab === 'rejoindre' && srv && srv.installed) {
+                        selectServer(srv);
+                    } else {
+                        renderServerActionBox();
+                    }
+                });
+                lami.on('downloadCancelled', function (m) {
+                    if (m.id !== activeDownload.serverId) return;
+                    resetDownloadState();
+                    renderServersSidebar();
+                    renderServerActionBox();
                 });
             }
         }
@@ -1766,6 +1804,31 @@
         }
 
         // --- SIMULATION AUTH MICROSOFT ---
+        // Confirmation stylée (remplace confirm() natif). Renvoie une Promise<bool>.
+        function showConfirm(title, message, okLabel) {
+            return new Promise(function (resolve) {
+                const modal = document.getElementById('confirm-modal');
+                document.getElementById('confirm-modal-title').innerText = title || 'Confirmer';
+                document.getElementById('confirm-modal-message').innerText = message || '';
+                const okBtn = document.getElementById('confirm-modal-ok');
+                const cancelBtn = document.getElementById('confirm-modal-cancel');
+                okBtn.innerText = okLabel || 'Confirmer';
+                const close = function (result) {
+                    modal.classList.add('hidden');
+                    okBtn.onclick = cancelBtn.onclick = modal.onclick = null;
+                    document.removeEventListener('keydown', onKey);
+                    resolve(result);
+                };
+                const onKey = function (ev) { if (ev.key === 'Escape') close(false); };
+                okBtn.onclick = function () { close(true); };
+                cancelBtn.onclick = function () { close(false); };
+                modal.onclick = function (ev) { if (ev.target === modal) close(false); };
+                document.addEventListener('keydown', onKey);
+                modal.classList.remove('hidden');
+                lucide.createIcons();
+            });
+        }
+
         function showLoginModal() { document.getElementById('login-modal').classList.remove('hidden'); }
         function hideLoginModal() { document.getElementById('login-modal').classList.add('hidden'); }
 
@@ -2630,8 +2693,10 @@
             renderServersSidebar();
 
             // Téléchargement RÉEL via le backend (progression par événements).
+            // Timeout très long (2 h) : la promesse ne se résout qu'à la FIN du
+            // téléchargement complet — un gros modpack dépasse largement 30 s.
             if (window.lami && window.lami.connected) {
-                lami.call('startDownload', { id: srv.id }).catch(function (err) {
+                lami.call('startDownload', { id: srv.id }, 7200000).catch(function (err) {
                     showToast("Téléchargement échoué : " + err.message, "error");
                     resetDownloadState();
                     renderServersSidebar();
@@ -3015,7 +3080,7 @@
                 if (status) status.innerText = "Préparation…";
                 const pseudo = (document.getElementById('player-name').innerText || 'Player').trim();
                 const ramGb = parseInt(document.getElementById('setting-ram-slider').value, 10) || 6;
-                lami.call('launch', { id: srv.id, username: pseudo, ramGb: ramGb })
+                lami.call('launch', { id: srv.id, username: pseudo, ramGb: ramGb }, 7200000)
                     .then(function () { /* l'événement 'launched' gère l'UI (bouton Fermer) */ })
                     .catch(function (err) { showToast("Lancement échoué : " + err.message, "error"); resetPlayUI(); setPlayButtonPlay(); });
                 return;
@@ -3359,11 +3424,13 @@
                 fileToBase64(files.packs), fileToBase64(files.shaders)
             ]).then(function (b64) {
                 status.innerText = 'Publication…';
+                // Timeout long (30 min) : un gros modpack part en plusieurs lots
+                // vers le Worker — 30 s suffisaient pour du vanilla, pas au-delà.
                 return lami.call('publishServer', {
                     name: meta.name, ip: meta.ip, port: meta.port,
                     version: meta.version, loader: meta.loader, loaderVersion: meta.loaderVersion || '',
                     modsZip: b64[0], pluginsZip: b64[1], packsZip: b64[2], shadersZip: b64[3]
-                });
+                }, 1800000);
             }).then(function () {
                 bar.style.width = '100%'; percent.innerText = '100%';
                 showToast(`Serveur "${meta.name}" publié !`, 'success');
@@ -3448,7 +3515,7 @@
                             <i data-lucide="edit-3" class="w-3.5 h-3.5 text-brand"></i>
                             <span>Modifier</span>
                         </button>
-                        <button onclick="event.stopPropagation(); deletePublishedServerCompletely('${srv.id}')" class="px-3 py-2 bg-red-950/20 hover:bg-red-900/20 border border-red-950/40 hover:border-red-500/30 text-red-400 font-bold rounded-xl text-xs transition duration-150 flex items-center gap-1 cursor-pointer">
+                        <button onclick="event.stopPropagation(); deletePublishedServerCompletely('${srv.id}')" ${deletingServers.size > 0 ? 'disabled' : ''} class="px-3 py-2 bg-red-950/20 hover:bg-red-900/20 border border-red-950/40 hover:border-red-500/30 text-red-400 font-bold rounded-xl text-xs transition duration-150 flex items-center gap-1 ${deletingServers.size > 0 ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer'}">
                             <i data-lucide="trash-2" class="w-3.5 h-3.5"></i>
                             <span>Supprimer</span>
                         </button>
@@ -3541,7 +3608,7 @@
                     return Promise.resolve();
                 })).then(function () {
                     showToast('Enregistrement…', 'info');
-                    return lami.call('editServer', meta);
+                    return lami.call('editServer', meta, 1800000);   // 30 min (assets par lots)
                 }).then(function () {
                     showToast('Serveur mis à jour.', 'success');
                     refreshServersFromBackend();
@@ -3611,18 +3678,28 @@
                 const srv = (catalog || []).find(s => s.id === serverId);
                 const name = srv ? srv.name : serverId;
                 if (deletingServers.has(serverId)) return;   // déjà en cours
-                if (!confirm(`Supprimer définitivement le serveur « ${name} » ?`)) return;
-                deletingServers.add(serverId);
-                renderUserPublishedServers();   // affiche l'état « Suppression… » verrouillé
-                lami.call('deleteServer', { id: serverId }).then(function () {
-                    showToast(`Le serveur "${name}" a été définitivement supprimé.`, 'success');
-                    if (currentlySelectedServer && currentlySelectedServer.id === serverId) goBackToSearch();
-                    deletingServers.delete(serverId);
-                    refreshServersFromBackend();   // recharge catalogue + rendus
-                }).catch(function (err) {
-                    deletingServers.delete(serverId);
-                    renderUserPublishedServers();
-                    showToast('Suppression échouée : ' + (err.message || err), 'error');
+                // Une seule suppression à la fois : évite les écritures
+                // concurrentes sur l'index du repo (et reste plus lisible).
+                if (deletingServers.size > 0) {
+                    showToast("Une suppression est déjà en cours — attends qu'elle se termine.", "info");
+                    return;
+                }
+                showConfirm('Supprimer le serveur',
+                            `« ${name} » sera définitivement supprimé pour tous les joueurs. Cette action est irréversible.`,
+                            'Supprimer').then(function (ok) {
+                    if (!ok || deletingServers.size > 0) return;
+                    deletingServers.add(serverId);
+                    renderUserPublishedServers();   // affiche l'état « Suppression… » verrouillé
+                    lami.call('deleteServer', { id: serverId }, 120000).then(function () {
+                        showToast(`Le serveur "${name}" a été définitivement supprimé.`, 'success');
+                        if (currentlySelectedServer && currentlySelectedServer.id === serverId) goBackToSearch();
+                        deletingServers.delete(serverId);
+                        refreshServersFromBackend();   // recharge catalogue + rendus
+                    }).catch(function (err) {
+                        deletingServers.delete(serverId);
+                        renderUserPublishedServers();
+                        showToast('Suppression échouée : ' + (err.message || err), 'error');
+                    });
                 });
                 return;
             }
