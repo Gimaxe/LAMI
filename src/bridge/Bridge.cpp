@@ -593,7 +593,22 @@ void Bridge::resolveRoleAndReply(int id, const MinecraftSession &s)
             req, QJsonDocument(QJsonObject{{"token", s.minecraftToken}}).toJson());
         connect(reply, &QNetworkReply::finished, this, [this, id, s, reply, owner]() {
             reply->deleteLater();
+            const int httpStatus =
+                reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
             const QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
+
+            // 401 = le Worker a rejeté le token Minecraft (invalide/expiré) : c'est
+            // une identité NON authentifiée, pas juste un rôle inconnu. Le masquer
+            // derrière un repli "superadmin" tromperait l'utilisateur (il croirait
+            // être connecté alors que toute écriture échouera ensuite). On invalide
+            // donc la session et on force une reconnexion.
+            if (httpStatus == 401) {
+                m_session = MinecraftSession{};
+                replyError(id, o.value("error").toString(
+                                   "Session Microsoft expirée, reconnecte-toi."));
+                return;
+            }
+
             QString role, diag;
             if (reply->error() != QNetworkReply::NoError)
                 diag = "Worker injoignable : " + reply->errorString();
@@ -602,6 +617,8 @@ void Bridge::resolveRoleAndReply(int id, const MinecraftSession &s)
             else
                 role = o.value("role").toString();
             if (role.isEmpty()) {
+                // Repli UNIQUEMENT pour un Worker injoignable/en erreur (pas pour un
+                // token rejeté, traité ci-dessus) : ne jamais fabriquer un faux rôle.
                 role = owner ? "superadmin" : "player";
                 if (!diag.isEmpty())
                     emit event(QJsonObject{{"event", "loginProgress"}, {"step", diag}});
@@ -946,7 +963,23 @@ void Bridge::postToWorker(int id, const QString &path, QJsonObject body)
     QNetworkReply *reply = m_net->post(req, QJsonDocument(body).toJson());
     connect(reply, &QNetworkReply::finished, this, [this, id, reply]() {
         reply->deleteLater();
+        const int httpStatus =
+            reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
         const QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
+
+        // 401 = le Worker a rejeté le token Minecraft (invalide/expiré). La
+        // session locale ment donc sur l'identité : on l'invalide et on prévient
+        // l'UI (sessionExpired) pour qu'elle redemande une connexion, plutôt que
+        // de laisser l'utilisateur croire qu'il est connecté alors que TOUTE
+        // écriture continuerait d'échouer silencieusement en arrière-plan.
+        if (httpStatus == 401) {
+            m_session = MinecraftSession{};
+            emit event(QJsonObject{{"event", "sessionExpired"}});
+            replyError(id, o.value("error").toString(
+                               "Session Microsoft expirée, reconnecte-toi."));
+            return;
+        }
+
         if (reply->error() != QNetworkReply::NoError || o.contains("error")) {
             replyError(id, o.value("error").toString(
                                "Worker : " + reply->errorString()));

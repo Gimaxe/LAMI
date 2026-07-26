@@ -1210,7 +1210,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.41.0";
+        const LAMI_VERSION = "0.41.1";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1495,6 +1495,21 @@
                     if (wrapper) wrapper.classList.add('hidden');
                     isPlaying = false;
                     setPlayButtonStop();
+                });
+                // Le backend a détecté un token Minecraft invalide/expiré pendant
+                // une action (publier/modifier/supprimer...) : la session locale
+                // mentait sur l'identité, on la ferme proprement et on redemande
+                // une vraie connexion (pas de faux "connecté" avec écritures mortes).
+                lami.on('sessionExpired', function () {
+                    isMicrosoftAuthed = false;
+                    document.getElementById('player-name').innerText = "Non connecté";
+                    document.getElementById('player-avatar').src =
+                        "https://api.mineatar.io/face/00000000000000000000000000000000?scale=8";
+                    document.getElementById('btn-microsoft-text').innerText = "Connexion";
+                    document.getElementById('player-role').classList.add('hidden');
+                    setDemoRole('player');
+                    showToast("Session Microsoft expirée, reconnecte-toi.", "error");
+                    showLoginModal();
                 });
                 lami.on('gameClosed', function (m) {
                     if (m.id === runningId) runningId = null;
