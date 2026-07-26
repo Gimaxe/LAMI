@@ -57,6 +57,10 @@ public:
     // Force l'utilisation du java fourni (javaPath) au lieu de provisionner un JRE.
     void setForceJava(bool on) { m_forceJava = on; }
 
+    // Lit le repo (métadonnées + assets) via le Worker de confiance (repo privé
+    // sans token, cache au bord). À appeler juste après construction.
+    void setWorkerUrl(const QString &url);
+
 signals:
     void progress(const QString &step);
     void planReady(const lami::LaunchPlan &plan);

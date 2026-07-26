@@ -74,6 +74,7 @@ InstanceManager::InstanceManager(QString owner, QString repo, QString branch,
         m_gh->setToken(m_token);
 
     connect(m_gh, &GitHubClient::serverFetched, this, &InstanceManager::onServerFetched);
+    // (setWorkerUrl est appelé par l'appelant juste après construction si besoin.)
     connect(m_gh, &GitHubClient::errorOccurred, this, &InstanceManager::failed);
     connect(m_meta, &MojangMeta::resolved, this, &InstanceManager::onVersionResolved);
     connect(m_meta, &MojangMeta::errorOccurred, this, &InstanceManager::failed);
@@ -93,6 +94,8 @@ InstanceManager::InstanceManager(QString owner, QString repo, QString branch,
         afterJavaReady();
     });
 }
+
+void InstanceManager::setWorkerUrl(const QString &url) { m_gh->setWorkerUrl(url); }
 
 // --- Disposition des dossiers ----------------------------------------------
 QString InstanceManager::librariesRoot() const { return QDir(m_dataRoot).filePath("libraries"); }
@@ -309,15 +312,17 @@ void InstanceManager::assemblePlan(const QByteArray &assetIndexJson)
         plan.toDeleteMods = sp.toDelete;
 
         const QByteArray bearer = QByteArray("Bearer ") + m_token.toUtf8();
+        const bool viaWorker = m_gh->useWorker();
         for (const AssetRef &a : sp.toDownload) {
             DownloadTask t;
             // Source = banque mutualisée du repo ; destination = dossier de l'instance.
-            t.url = m_gh->apiContentsUrl(assetBankPath(m_server, a.type, a.entry));
+            // Via le Worker (repo privé sans token, cache au bord) ou l'API GitHub.
+            t.url = m_gh->readUrl(assetBankPath(m_server, a.type, a.entry));
             t.dest = QDir(instanceDir(m_server.id)).filePath(assetLocalPath(a.type, a.entry));
             t.expectedHash = a.entry.sha256;
             t.algo = QCryptographicHash::Sha256;
             t.size = a.entry.size;
-            if (!m_token.isEmpty()) {
+            if (!viaWorker && !m_token.isEmpty()) {
                 t.headers.append({QByteArray("Authorization"), bearer});
                 t.headers.append({QByteArray("Accept"), QByteArray("application/vnd.github.raw+json")});
             }

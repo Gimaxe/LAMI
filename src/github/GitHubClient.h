@@ -35,8 +35,19 @@ public:
     // authentifiée (Authorization: Bearer ...). Voir src/github/README.md.
     void setToken(const QString &token);
 
+    // URL du Worker de confiance (repo privé, sans token côté client). Si définie,
+    // TOUTES les lectures passent par lui (GET /file?path=...), qui détient le token
+    // GitHub et met en cache au bord. Voir worker/README.md.
+    void setWorkerUrl(const QString &url) { m_workerUrl = url.trimmed(); }
+    bool useWorker() const { return !m_workerUrl.isEmpty(); }
+
     // URL "raw" d'un fichier du repo (repo public), ex. "servers/atraxe-smp.json".
     QString rawUrl(const QString &path) const;
+
+    // URL de lecture à utiliser pour `path` : Worker /file si configuré, sinon
+    // l'API contents (token) ou raw.githubusercontent.com (public). Sert aussi au
+    // téléchargement des assets (InstanceManager).
+    QString readUrl(const QString &path) const;
 
     // URL API "contents" d'un fichier avec ?ref=branch (lecture, repo privé).
     QString apiContentsUrl(const QString &path) const;
@@ -102,6 +113,7 @@ private:
     QString m_repo;
     QString m_branch;
     QString m_token;  // vide => repo public (raw), sinon API authentifiée
+    QString m_workerUrl;  // défini => lectures via le Worker (repo privé, sans token)
 };
 
 } // namespace lami

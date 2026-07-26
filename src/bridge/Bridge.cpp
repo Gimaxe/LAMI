@@ -62,7 +62,11 @@ Bridge::Bridge(QObject *parent)
     , m_gh(new GitHubClient(config::owner(), config::repo(), config::branch(), this))
     , m_net(new QNetworkAccessManager(this))
 {
-    if (!config::token().isEmpty())
+    // Repo privé sans token côté client : les lectures passent par le Worker
+    // (GET /file, cache au bord). Un token local (dev) reste possible sinon.
+    if (useWorker())
+        m_gh->setWorkerUrl(config::workerUrl());
+    else if (!config::token().isEmpty())
         m_gh->setToken(config::token());
 }
 
@@ -769,6 +773,7 @@ void Bridge::startDownload(int id, const QJsonObject &params)
     auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
                                     config::token(), config::dataRoot(), config::javaPath(), this);
     mgr->setForceJava(config::forceCustomJava());
+    if (useWorker()) mgr->setWorkerUrl(config::workerUrl());
 
     // Session neutre : le téléchargement des fichiers ne dépend pas de l'identité
     // (seul le LANCEMENT a besoin du vrai token).
@@ -828,6 +833,7 @@ void Bridge::launch(int id, const QJsonObject &params)
     auto *mgr = new InstanceManager(config::owner(), config::repo(), config::branch(),
                                     config::token(), config::dataRoot(), config::javaPath(), this);
     mgr->setForceJava(config::forceCustomJava());
+    if (useWorker()) mgr->setWorkerUrl(config::workerUrl());
 
     // Session : la vraie si connecté (Microsoft approuvé), sinon un profil
     // "hors-ligne" pour au moins démarrer le jeu (menu principal).
@@ -950,11 +956,14 @@ void Bridge::postToWorker(int id, const QString &path, QJsonObject body)
     });
 }
 
-// Extrait chaque zip → fichiers → { type: [ {file, base64, sha256, size} ] }.
-QJsonObject Bridge::extractAssetsForWorker(const QHash<QString, QString> &zips)
+// Aplati les zips en une liste plate d'assets (avec base64) et remplit en même
+// temps *assetListsOut = { type: [ {file, sha256, size} ] } (métadonnées seules,
+// destinées au manifeste côté Worker après upload chunké).
+QJsonArray Bridge::flattenAssetsForWorker(const QHash<QString, QString> &zips,
+                                          QJsonObject *assetListsOut)
 {
     const QString base = QStandardPaths::writableLocation(QStandardPaths::TempLocation);
-    QJsonObject out;
+    QJsonArray flat;
     for (auto it = zips.begin(); it != zips.end(); ++it) {
         const QString type = it.key();
         const QString tmp = QDir(base).filePath("lami-wrk-" + type);
@@ -963,20 +972,82 @@ QJsonObject Bridge::extractAssetsForWorker(const QHash<QString, QString> &zips)
         QString err;
         if (ModArchive::extract(it.value(), tmp, QString(), &err).isEmpty())
             continue;
-        QJsonArray arr;
+        QJsonArray meta;
         for (const ModEntry &e : scanFolder(tmp)) {
             QFile f(QDir(tmp).filePath(e.file));
             if (!f.open(QIODevice::ReadOnly)) continue;
-            arr.append(QJsonObject{
+            flat.append(QJsonObject{
+                {"type", type},
                 {"file", e.file},
                 {"base64", QString::fromLatin1(f.readAll().toBase64())},
                 {"sha256", e.sha256},
                 {"size", static_cast<double>(e.size)},
             });
+            meta.append(QJsonObject{
+                {"file", e.file}, {"sha256", e.sha256}, {"size", static_cast<double>(e.size)}});
         }
-        if (!arr.isEmpty()) out.insert(type, arr);
+        if (assetListsOut && !meta.isEmpty()) assetListsOut->insert(type, meta);
     }
-    return out;
+    return flat;
+}
+
+// Upload les assets par lots via POST /upload (bornés en taille ET en nombre pour
+// rester sous les limites du Worker : requête ≤ ~100 Mo, ≤ 50 sous-requêtes), puis
+// envoie la requête finale (publish/edit) avec seulement les métadonnées (assetLists).
+void Bridge::publishChunked(int id, const QString &finalPath, QJsonObject finalBody,
+                            const QString &mcVersion, const QString &loader,
+                            const QHash<QString, QString> &zips)
+{
+    QJsonObject assetLists;
+    auto flat = std::make_shared<QJsonArray>(flattenAssetsForWorker(zips, &assetLists));
+    finalBody.insert("assetLists", assetLists);
+
+    // Pas d'assets : rien à uploader, on publie directement.
+    if (flat->isEmpty()) { postToWorker(id, finalPath, finalBody); return; }
+
+    auto pos = std::make_shared<int>(0);
+    auto fb  = std::make_shared<QJsonObject>(finalBody);
+    auto step = std::make_shared<std::function<void()>>();
+    const QString token = m_session.minecraftToken;
+
+    *step = [this, id, finalPath, fb, flat, pos, step, mcVersion, loader, token]() {
+        if (*pos >= flat->size()) {          // tout est uploadé → requête finale
+            postToWorker(id, finalPath, *fb);
+            return;
+        }
+        // Construit un lot : assets groupés par type, borné (≤ 40 Mo, ≤ 20 fichiers).
+        QJsonObject byType;
+        qint64 batchBytes = 0;
+        int batchCount = 0;
+        while (*pos < flat->size() && batchCount < 20 && batchBytes < 40 * 1024 * 1024) {
+            const QJsonObject a = flat->at(*pos).toObject();
+            const QString type = a.value("type").toString();
+            QJsonArray arr = byType.value(type).toArray();
+            arr.append(QJsonObject{{"file", a.value("file")}, {"base64", a.value("base64")},
+                                   {"sha256", a.value("sha256")}, {"size", a.value("size")}});
+            byType[type] = arr;
+            batchBytes += a.value("base64").toString().size();
+            batchCount++;
+            (*pos)++;
+        }
+
+        QJsonObject body{{"token", token}, {"minecraft_version", mcVersion},
+                         {"loader", loader}, {"assets", byType}};
+        QNetworkRequest req{QUrl(config::workerUrl() + "/upload")};
+        req.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+        req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+        QNetworkReply *reply = m_net->post(req, QJsonDocument(body).toJson());
+        connect(reply, &QNetworkReply::finished, this, [this, id, reply, step]() {
+            reply->deleteLater();
+            const QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
+            if (reply->error() != QNetworkReply::NoError || o.contains("error")) {
+                replyError(id, o.value("error").toString("Upload Worker : " + reply->errorString()));
+                return;                       // on stoppe la chaîne en cas d'échec
+            }
+            (*step)();                        // lot suivant
+        });
+    };
+    (*step)();
 }
 
 void Bridge::publishServer(int id, const QJsonObject &params)
@@ -1031,8 +1102,9 @@ void Bridge::publishServer(int id, const QJsonObject &params)
             {"id", srv.id}, {"name", srv.name}, {"address", srv.address},
             {"minecraft_version", srv.minecraftVersion}, {"loader", srv.loader},
             {"loader_version", srv.loaderVersion}};
-        postToWorker(id, "/publish",
-                     QJsonObject{{"server", server}, {"assets", extractAssetsForWorker(zips)}});
+        // Chunké : uploade les assets par lots via /upload, puis /publish (métadonnées).
+        publishChunked(id, "/publish", QJsonObject{{"server", server}},
+                       srv.minecraftVersion, srv.loader, zips);
         return;
     }
 
@@ -1110,9 +1182,13 @@ void Bridge::editServer(int id, const QJsonObject &params)
             QFile f(z);
             if (f.open(QIODevice::WriteOnly)) { f.write(QByteArray::fromBase64(b64.toUtf8())); f.close(); zips.insert(it.key(), z); }
         }
-        postToWorker(id, "/edit", QJsonObject{{"id", serverId}, {"changes", changes},
-                                              {"clear", clearArr},
-                                              {"assets", extractAssetsForWorker(zips)}});
+        // Version/loader cibles pour le chemin de banque des assets uploadés :
+        // ceux du formulaire (toujours pré-remplis avec les valeurs du serveur).
+        const QString mcVer = params.value("version").toString().trimmed();
+        const QString ldr   = params.value("loader").toString().trimmed().toLower();
+        publishChunked(id, "/edit",
+                       QJsonObject{{"id", serverId}, {"changes", changes}, {"clear", clearArr}},
+                       mcVer, ldr, zips);
         return;
     }
 

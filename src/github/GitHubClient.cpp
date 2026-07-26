@@ -90,6 +90,16 @@ QString GitHubClient::rawUrl(const QString &path) const
         .arg(m_owner, m_repo, m_branch, path);
 }
 
+QString GitHubClient::readUrl(const QString &path) const
+{
+    if (useWorker())
+        return m_workerUrl + "/file?path=" +
+               QString::fromUtf8(QUrl::toPercentEncoding(path));
+    if (!m_token.isEmpty())
+        return apiContentsUrl(path);
+    return rawUrl(path);
+}
+
 QString GitHubClient::apiContentsUrl(const QString &path) const
 {
     return QStringLiteral("https://api.github.com/repos/%1/%2/contents/%3?ref=%4")
@@ -253,6 +263,13 @@ void GitHubClient::deleteFile(const QString &path, const QString &commitMessage)
 
 QNetworkReply *GitHubClient::get(const QString &path)
 {
+    // Worker de confiance → GET /file?path=... (aucun token côté client, cache au bord).
+    if (useWorker()) {
+        QNetworkRequest req{QUrl(readUrl(path))};
+        req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+        return m_net->get(req);
+    }
+
     // Repo privé (token) → API contents authentifiée, en demandant le contenu brut.
     // Repo public (pas de token) → raw.githubusercontent.com.
     if (!m_token.isEmpty()) {
@@ -527,6 +544,29 @@ void GitHubClient::removeFromIndex(const QString &serverId, const QString &commi
 
 void GitHubClient::fetchAllServers()
 {
+    // Worker : un seul appel GET /servers renvoie tous les manifestes d'un coup.
+    if (useWorker()) {
+        QNetworkRequest wreq{QUrl(m_workerUrl + "/servers")};
+        wreq.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+        QNetworkReply *wr = m_net->get(wreq);
+        connect(wr, &QNetworkReply::finished, this, [this, wr]() {
+            wr->deleteLater();
+            if (wr->error() != QNetworkReply::NoError) {
+                emit errorOccurred(tr("Impossible de lister les serveurs : %1").arg(wr->errorString()));
+                return;
+            }
+            QVector<ServerInfo> results;
+            const QJsonObject o = QJsonDocument::fromJson(wr->readAll()).object();
+            for (const QJsonValue &v : o.value("servers").toArray()) {
+                const QJsonObject m = v.toObject();
+                const ServerInfo s = parseServer(m, m.value("id").toString());
+                if (s.valid) results.push_back(s);
+            }
+            emit serversFetched(results);
+        });
+        return;
+    }
+
     // 1) Lister le dossier servers/ (l'API contents renvoie un tableau JSON).
     QNetworkRequest req{QUrl(apiContentsUrl("servers"))};
     if (!m_token.isEmpty())

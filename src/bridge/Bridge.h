@@ -1,6 +1,7 @@
 #pragma once
 
 #include <QHash>
+#include <QJsonArray>
 #include <QJsonObject>
 #include <QObject>
 #include <QString>
@@ -72,8 +73,15 @@ private:
     // par lui (identité vérifiée via Mojang, aucun token GitHub côté client). ---
     bool useWorker() const;
     void postToWorker(int id, const QString &path, QJsonObject body);
-    // Extrait les zips fournis en assets base64 (file/base64/sha256/size) pour le Worker.
-    QJsonObject extractAssetsForWorker(const QHash<QString, QString> &zips);
+    // Aplati les zips en liste plate [{type,file,base64,sha256,size}] et remplit
+    // *assetListsOut avec les seules métadonnées (file/sha256/size) par catégorie.
+    QJsonArray flattenAssetsForWorker(const QHash<QString, QString> &zips,
+                                      QJsonObject *assetListsOut);
+    // Publish/edit CHUNKÉ : uploade les assets par lots via /upload (pour ne pas
+    // dépasser les limites du Worker), puis envoie finalPath+finalBody (assetLists).
+    void publishChunked(int id, const QString &finalPath, QJsonObject finalBody,
+                        const QString &mcVersion, const QString &loader,
+                        const QHash<QString, QString> &zips);
 
     // Exécute `action(roles)` seulement si la session est Super Admin (sinon replyError).
     void requireSuperAdmin(int id, std::function<void(const RoleTable &)> action);

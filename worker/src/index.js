@@ -26,61 +26,149 @@
 const MOJANG_PROFILE = "https://api.minecraftservices.com/minecraft/profile";
 
 export default {
-  async fetch(request, env) {
-    // CORS simple (le launcher est une app native, mais utile en dev navigateur).
+  async fetch(request, env, ctx) {
     if (request.method === "OPTIONS") return cors(new Response(null, { status: 204 }));
-    if (request.method !== "POST") return cors(json({ error: "POST attendu" }, 405));
-
     const url = new URL(request.url);
     const path = url.pathname.replace(/\/+$/, "");
+    const gh = new GitHub(env);
 
+    // ================= LECTURES (GET) : publiques, SANS token ==================
+    // Le Worker lit avec SON token GitHub ; le client n'en a aucun. On ne met en
+    // cache QUE les fichiers de mods (/file), jamais l'identité ni les écritures.
+    if (request.method === "GET") {
+      try {
+        if (path === "/file")    return cors(await handleFile(gh, url, ctx));
+        if (path === "/servers") return cors(json(await handleListServers(gh)));
+        if (path === "/server")  return cors(json(await handleGetServer(gh, url.searchParams.get("id"))));
+        if (path === "/resolve") return cors(json(await handleResolve(gh, url.searchParams.get("ip"))));
+        return cors(json({ error: "Route inconnue: " + path }, 404));
+      } catch (e) {
+        return cors(json({ error: e.message || String(e) }, e.status || 500));
+      }
+    }
+
+    if (request.method !== "POST") return cors(json({ error: "Méthode non supportée" }, 405));
+
+    // ============= ÉCRITURES / IDENTITÉ (POST) : token requis ==================
     let body;
     try { body = await request.json(); }
     catch { return cors(json({ error: "JSON invalide" }, 400)); }
 
-    // --- 1) Identité vérifiée par Mojang (jamais fournie par le client) --------
     const token = (body.token || "").trim();
     if (!token) return cors(json({ error: "token manquant" }, 401));
-    const identity = await verifyIdentity(token);
+    const identity = await verifyIdentity(token);         // JAMAIS mis en cache
     if (!identity) return cors(json({ error: "Token Minecraft invalide ou expiré." }, 401));
-    const uuid = normalizeUuid(identity.id);   // uuid AUTHENTIFIÉ
-    const name = identity.name;
-
-    const gh = new GitHub(env);
-    const role = await resolveRole(gh, uuid);   // rôle RECALCULÉ côté serveur
+    const uuid = normalizeUuid(identity.id);
+    const role = await resolveRole(gh, uuid);             // rôle recalculé à chaque appel
 
     try {
       switch (path) {
         case "/whoami":
-          return cors(json({ uuid, name, role }));
-
+          return cors(json({ uuid, name: identity.name, role }));
+        case "/upload":       // lot d'assets (chunking)
+          requireRole(role, ["host", "superadmin"]);
+          return cors(json(await handleUpload(gh, body)));
         case "/publish":
           requireRole(role, ["host", "superadmin"]);
           return cors(json(await handlePublish(gh, body, uuid)));
-
         case "/edit":
           return cors(json(await handleEdit(gh, body, uuid, role)));
-
         case "/delete":
           return cors(json(await handleDelete(gh, body, uuid, role)));
-
         case "/setRole":
           requireRole(role, ["superadmin"]);
           return cors(json(await handleSetRole(gh, body)));
-
         case "/removeRole":
           requireRole(role, ["superadmin"]);
           return cors(json(await handleRemoveRole(gh, body)));
-
         default:
           return cors(json({ error: "Route inconnue: " + path }, 404));
       }
     } catch (e) {
-      const status = e.status || 500;
-      return cors(json({ error: e.message || String(e) }, status));
+      return cors(json({ error: e.message || String(e) }, e.status || 500));
     }
   },
 };
+
+// ==========================================================================
+//  Lectures (GET) — le Worker lit le repo privé avec son token, sans exposer.
+// ==========================================================================
+
+// Télécharge un fichier de la banque avec CACHE au bord (mods immuables).
+async function handleFile(gh, url, ctx) {
+  const p = (url.searchParams.get("path") || "").replace(/^\/+/, "");
+  if (!p || p.includes("..")) throw err(400, "path invalide");
+
+  // Seuls les fichiers de la BANQUE (mods/plugins/resourcepacks/shaders) sont
+  // immuables (chemin = contenu) → cache au bord. Les métadonnées (servers/*.json,
+  // index.json, roles.json) changent : jamais mises en cache (sinon on servirait
+  // un index/manifeste périmé après une publication).
+  const top = p.split("/")[0];
+  const cacheable = ASSET_TYPES.includes(top);
+
+  const cache = caches.default;
+  const cacheKey = new Request(url.toString(), { method: "GET" });
+  if (cacheable) {
+    const hit = await cache.match(cacheKey);
+    if (hit) return hit;
+  }
+
+  const r = await fetch(`${gh.base}/${p}?ref=${gh.branch}`,
+                        { headers: gh.headers({ Accept: "application/vnd.github.raw" }) });
+  if (!r.ok) throw err(r.status === 404 ? 404 : 502, `Fichier introuvable: ${p}`);
+  const resp = new Response(r.body, {
+    headers: {
+      "Content-Type": "application/octet-stream",
+      "Cache-Control": cacheable
+        ? "public, max-age=31536000, immutable"
+        : "no-store",
+    },
+  });
+  if (cacheable) ctx.waitUntil(cache.put(cacheKey, resp.clone()));
+  return resp;
+}
+
+async function handleListServers(gh) {
+  const items = await gh.listDir("servers");
+  const out = [];
+  for (const it of items) {
+    if (it.type !== "file" || it.name === "index.json" || !it.name.endsWith(".json")) continue;
+    const m = await gh.readJson("servers/" + it.name).catch(() => null);
+    if (m) out.push(m);
+  }
+  return { servers: out };
+}
+
+async function handleGetServer(gh, id) {
+  id = slugify(id || "");
+  if (!id) throw err(400, "id manquant");
+  return await gh.readJson(`servers/${id}.json`);
+}
+
+async function handleResolve(gh, ip) {
+  ip = (ip || "").trim().toLowerCase();
+  if (!ip) throw err(400, "adresse manquante");
+  const index = await gh.readJson("servers/index.json").catch(() => ({}));
+  const id = index[ip];
+  if (!id) throw err(404, "Aucun serveur pour cette adresse.");
+  return await gh.readJson(`servers/${id}.json`);
+}
+
+// Upload d'un LOT d'assets (chunking) : uploade dans la banque (dédup skipIfExists).
+async function handleUpload(gh, body) {
+  const mc = body.minecraft_version || body.version || "";
+  const loader = (body.loader || "vanilla").toLowerCase();
+  const assets = body.assets || {};
+  let uploaded = 0;
+  for (const type of ASSET_TYPES) {
+    for (const f of (assets[type] || [])) {
+      const bankPath = bankPathRaw(type, mc, loader, f.file);
+      await gh.putFileBase64(bankPath, f.base64, `Ajout ${bankPath} via Worker`, true);
+      uploaded++;
+    }
+  }
+  return { ok: true, uploaded };
+}
 
 // --------------------------------------------------------------------------
 //  Vérification d'identité : le Worker fait autorité via Mojang.
@@ -136,9 +224,16 @@ async function handlePublish(gh, body, uuid) {
     if (role !== "superadmin") throw err(403, "Ce serveur appartient à un autre hébergeur.");
   }
 
-  // Upload des assets fournis (base64) dans la banque, puis manifeste.
   const manifest = buildManifest(srv, uuid);
-  await uploadAssets(gh, manifest, body.assets || {});
+  if (body.assets && Object.keys(body.assets).length) {
+    // Petit publish : assets en base64 uploadés directement.
+    await uploadAssets(gh, manifest, body.assets);
+  } else if (body.assetLists) {
+    // Publish CHUNKÉ : les fichiers ont déjà été uploadés via /upload ; on ne
+    // reçoit ici que les listes de métadonnées (file/sha256/size) pour le manifeste.
+    for (const type of ASSET_TYPES)
+      if (Array.isArray(body.assetLists[type])) manifest[type] = body.assetLists[type];
+  }
   await gh.putFile(`servers/${id}.json`, JSON.stringify(manifest, null, 2),
                    `Publication de ${id} via Worker (${uuid})`);
   if (manifest.address) await upsertIndex(gh, manifest.address, id);
@@ -166,7 +261,13 @@ async function handleEdit(gh, body, uuid, role) {
   // Catégories vidées explicitement (clear: ["mods", ...]).
   for (const t of (body.clear || [])) if (ASSET_TYPES.includes(t)) cur[t] = [];
 
-  await uploadAssets(gh, cur, body.assets || {});
+  if (body.assets && Object.keys(body.assets).length) {
+    await uploadAssets(gh, cur, body.assets);
+  } else if (body.assetLists) {
+    // Édition CHUNKÉE : fichiers déjà uploadés via /upload ; ici, métadonnées.
+    for (const type of ASSET_TYPES)
+      if (Array.isArray(body.assetLists[type])) cur[type] = body.assetLists[type];
+  }
   await gh.putFile(`servers/${id}.json`, JSON.stringify(cur, null, 2),
                    `Modification de ${id} via Worker (${uuid})`);
   if (cur.address) await upsertIndex(gh, cur.address, id);
@@ -246,10 +347,14 @@ async function uploadAssets(gh, manifest, assets) {
 }
 
 function assetBankPath(manifest, type, file) {
+  return bankPathRaw(type, manifest.minecraft_version, manifest.loader, file);
+}
+// Chemin banque à partir des paramètres bruts (utilisé par /upload en chunking).
+function bankPathRaw(type, mcVersion, loader, file) {
   // Les mods dépendent du loader ; les autres seulement de la version.
   if (type === "mods")
-    return `mods/${manifest.minecraft_version}/${manifest.loader}/${file}`;
-  return `${type}/${manifest.minecraft_version}/${file}`;
+    return `mods/${mcVersion}/${(loader || "vanilla").toLowerCase()}/${file}`;
+  return `${type}/${mcVersion}/${file}`;
 }
 
 async function upsertIndex(gh, address, id) {
@@ -299,6 +404,13 @@ class GitHub {
     const meta = await this.getFileMeta(path);
     if (!meta) throw err(404, `${path} introuvable`);
     return JSON.parse(b64decode(meta.content));
+  }
+  async listDir(path) {
+    const r = await fetch(`${this.base}/${path}?ref=${this.branch}`, { headers: this.headers() });
+    if (r.status === 404) return [];
+    if (!r.ok) throw err(r.status, `GitHub LIST ${path}`);
+    const j = await r.json();
+    return Array.isArray(j) ? j : [];
   }
   async putFile(path, contentUtf8, message, sha) {
     return this.putFileBase64(path, b64encode(contentUtf8), message, false, sha);
