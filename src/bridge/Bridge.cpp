@@ -825,6 +825,11 @@ void Bridge::startDownload(int id, const QJsonObject &params)
                                    {"doneMb", done / 1048576.0}, {"totalMb", total / 1048576.0},
                                    {"percent", total > 0 ? int(done * 100 / total) : 0}});
         });
+        // Chaque échec de fichier est remonté à l'UI avec sa raison (diagnostic).
+        connect(dl, &Downloader::fileFailed, this, [this, serverId](const QString &dest, const QString &reason) {
+            emit event(QJsonObject{{"event", "downloadFileFailed"}, {"id", serverId},
+                                   {"file", QFileInfo(dest).fileName()}, {"reason", reason}});
+        });
         // Annulation : on répond à la requête d'origine et on nettoie (les fichiers
         // déjà téléchargés restent — hashés, ils seront repris au prochain essai).
         connect(dl, &Downloader::aborted, this, [this, id, serverId, mgr, dl]() {

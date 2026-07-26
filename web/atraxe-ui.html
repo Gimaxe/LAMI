@@ -1247,7 +1247,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.45.0";
+        const LAMI_VERSION = "0.46.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1576,7 +1576,7 @@
                             // Des fichiers ont échoué (ex. mod absent de la banque) :
                             // on NE marque PAS installé — sinon dossiers vides mais
                             // launcher qui affiche « installé » avec des mods fantômes.
-                            showToast(`Installation incomplète : ${m.failed} fichier(s) en échec. Réessaie (ou republie le serveur).`, "error");
+                            showToast(`Installation incomplète : ${m.failed} fichier(s) en échec. Détail dans « Logs du jeu » — réessaie.`, "error");
                         }
                     }
                     renderServersSidebar();
@@ -1589,6 +1589,10 @@
                     } else {
                         renderServerActionBox();
                     }
+                });
+                lami.on('downloadFileFailed', function (m) {
+                    // Détail des échecs : visible dans le panneau « Logs du jeu ».
+                    appendGameLog(m.id, `ÉCHEC téléchargement : ${m.file} — ${m.reason}`);
                 });
                 lami.on('downloadCancelled', function (m) {
                     if (m.id !== activeDownload.serverId) return;
