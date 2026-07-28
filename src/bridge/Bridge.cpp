@@ -115,6 +115,8 @@ void Bridge::handle(const QJsonObject &request)
         uninstall(id, params);
     } else if (method == "openInstanceFolder") {
         openInstanceFolder(id, params);
+    } else if (method == "lookupName") {
+        lookupName(id, params);
     } else if (method == "listInstanceFiles") {
         listInstanceFiles(id, params);
     } else if (method == "deleteInstanceFiles") {
@@ -486,6 +488,24 @@ void Bridge::addInstanceFiles(int id, const QJsonObject &params)
         ++added;
     }
     replyOk(id, QJsonObject{{"added", added}});
+}
+
+// Résout le pseudo Minecraft d'un UUID via l'API publique Mojang (appel depuis
+// la machine du joueur — non bloquée, contrairement aux Workers). Lecture seule.
+void Bridge::lookupName(int id, const QJsonObject &params)
+{
+    const QString uuid = QString(params.value("uuid").toString()).remove('-').toLower();
+    if (uuid.length() != 32) { replyError(id, "UUID invalide."); return; }
+    QNetworkRequest req{QUrl("https://sessionserver.mojang.com/session/minecraft/profile/" + uuid)};
+    req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+    QNetworkReply *reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, id, uuid, reply]() {
+        reply->deleteLater();
+        const QJsonObject o = QJsonDocument::fromJson(reply->readAll()).object();
+        const QString name = o.value("name").toString();
+        // Pseudo introuvable (204/erreur) : on répond quand même, l'UI gardera l'UUID.
+        replyOk(id, QJsonObject{{"uuid", uuid}, {"name", name}});
+    });
 }
 
 // Ouvre le dossier de l'instance dans l'explorateur de fichiers de l'OS.

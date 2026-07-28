@@ -61,6 +61,7 @@ private:
     void openUrl(int id, const QJsonObject &params);
     void uninstall(int id, const QJsonObject &params);
     void openInstanceFolder(int id, const QJsonObject &params);
+    void lookupName(int id, const QJsonObject &params);
     void listInstanceFiles(int id, const QJsonObject &params);
     void deleteInstanceFiles(int id, const QJsonObject &params);
     void addInstanceFiles(int id, const QJsonObject &params);

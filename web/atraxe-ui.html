@@ -926,36 +926,7 @@
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-neutral-800/40" id="admin-players-list">
-                                <tr class="hover:bg-neutral-900/40">
-                                    <td class="py-3 flex items-center gap-2">
-                                        <div class="w-6 h-6 bg-neutral-800 rounded overflow-hidden">
-                                            <img src="https://api.mineatar.io/face/c06f89064c8a49119c29ea1dbd1aab82?scale=8" alt="Skin" class="w-6 h-6">
-                                        </div>
-                                        <span class="font-bold text-neutral-200">Valkyrie_91</span>
-                                    </td>
-                                    <td class="py-3 font-mono text-neutral-500">c06f8906-4c8a-4911-9c29-ea1dbd1aab82</td>
-                                    <td class="py-3">
-                                        <span class="px-2 py-0.5 rounded bg-brand/10 text-brand-500 font-bold border border-brand/20">Super Admin</span>
-                                    </td>
-                                    <td class="py-3 text-right">
-                                        <span class="text-neutral-500 text-[10px]">Non révocable (Propriétaire)</span>
-                                    </td>
-                                </tr>
-                                <tr class="hover:bg-neutral-900/40">
-                                    <td class="py-3 flex items-center gap-2">
-                                        <div class="w-6 h-6 bg-neutral-800 rounded overflow-hidden">
-                                            <img src="https://api.mineatar.io/face/ae82a93910ff424e83c74ff7c3aab82a?scale=8" alt="Skin" class="w-6 h-6">
-                                        </div>
-                                        <span class="font-bold text-neutral-200">Hexa_Miner</span>
-                                    </td>
-                                    <td class="py-3 font-mono text-neutral-500">ae82a939-10ff-424e-83c7-4ff7c3aab82a</td>
-                                    <td class="py-3">
-                                        <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">Hébergeur</span>
-                                    </td>
-                                    <td class="py-3 text-right">
-                                        <button onclick="handleAdminListRevoke('Hexa_Miner')" class="text-neutral-500 hover:text-red-400 font-semibold px-2 py-1 hover:bg-red-500/10 rounded transition-all">Révoquer</button>
-                                    </td>
-                                </tr>
+                                <!-- Rempli dynamiquement par renderAdminPlayers() (roles.json réel) -->
                             </tbody>
                         </table>
                     </div>
@@ -1279,7 +1250,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.51.0";
+        const LAMI_VERSION = "0.52.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1796,6 +1767,9 @@
 
             if (tabName === 'mes-publications') {
                 renderUserPublishedServers();
+            }
+            if (tabName === 'admin') {
+                renderAdminPlayers();   // liste réelle depuis roles.json
             }
         }
 
@@ -3808,6 +3782,71 @@
         }
 
         // --- SIMULATION ACTIONS ADMIN ---
+        // Cache uuid(compact) -> pseudo résolu via Mojang (évite de re-requêter).
+        const adminNameCache = {};
+
+        function adminRoleBadge(role) {
+            if (role === 'superadmin')
+                return '<span class="px-2 py-0.5 rounded bg-brand/10 text-brand-500 font-bold border border-brand/20">Super Admin</span>';
+            if (role === 'host')
+                return '<span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">Hébergeur</span>';
+            return '<span class="px-2 py-0.5 rounded bg-neutral-800/60 text-neutral-400 font-bold border border-neutral-700/40">Joueur</span>';
+        }
+
+        // Liste RÉELLE des membres (roles.json via le backend) + pseudos Mojang.
+        function renderAdminPlayers() {
+            const tbody = document.getElementById('admin-players-list');
+            if (!tbody) return;
+            if (!(window.lami && window.lami.connected)) {
+                tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-neutral-500 italic">Disponible uniquement dans le launcher.</td></tr>';
+                return;
+            }
+            tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-neutral-500 italic">Chargement…</td></tr>';
+            lami.call('listRoles').then(function (r) {
+                const roles = r.roles || [];
+                if (roles.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="py-4 text-center text-neutral-500 italic">Aucun rôle attribué.</td></tr>';
+                    return;
+                }
+                tbody.innerHTML = '';
+                roles.forEach(function (entry) {
+                    const compact = (entry.uuid || '').replace(/-/g, '').toLowerCase();
+                    const revocable = entry.role !== 'superadmin';
+                    const tr = document.createElement('tr');
+                    tr.className = "hover:bg-neutral-900/40";
+                    tr.innerHTML = `
+                        <td class="py-3 flex items-center gap-2">
+                            <div class="w-6 h-6 bg-neutral-800 rounded overflow-hidden">
+                                <img src="https://api.mineatar.io/face/${compact}?scale=8" onerror="this.style.display='none'" alt="" class="w-6 h-6">
+                            </div>
+                            <span class="font-bold text-neutral-200" id="admin-name-${compact}">${adminNameCache[compact] || '…'}</span>
+                        </td>
+                        <td class="py-3 font-mono text-neutral-500">${entry.uuid}</td>
+                        <td class="py-3">${adminRoleBadge(entry.role)}</td>
+                        <td class="py-3 text-right">
+                            ${revocable
+                                ? `<button onclick="handleAdminListRevoke('${entry.uuid}')" class="text-neutral-500 hover:text-red-400 font-semibold px-2 py-1 hover:bg-red-500/10 rounded transition-all cursor-pointer">Révoquer</button>`
+                                : '<span class="text-neutral-500 text-[10px]">Non révocable (Super Admin)</span>'}
+                        </td>
+                    `;
+                    tbody.appendChild(tr);
+                    // Pseudo résolu en arrière-plan via le backend (API Mojang).
+                    if (!adminNameCache[compact]) {
+                        lami.call('lookupName', { uuid: compact }).then(function (n) {
+                            adminNameCache[compact] = n.name || entry.uuid.slice(0, 8) + '…';
+                            const el = document.getElementById('admin-name-' + compact);
+                            if (el) el.innerText = adminNameCache[compact];
+                        }).catch(function () {
+                            const el = document.getElementById('admin-name-' + compact);
+                            if (el) el.innerText = entry.uuid.slice(0, 8) + '…';
+                        });
+                    }
+                });
+            }).catch(function (err) {
+                tbody.innerHTML = `<tr><td colspan="4" class="py-4 text-center text-red-400">${err.message || err}</td></tr>`;
+            });
+        }
+
         function handleAdminAction(type) {
             const uuidInput = document.getElementById('admin-uuid-input');
             const uuidVal = uuidInput.value.trim();
@@ -3817,7 +3856,7 @@
                 return;
             }
 
-            // Administration RÉELLE via le backend (réservée au Super Admin).
+            // Administration RÉELLE via le backend → Worker (réservée au Super Admin).
             if (window.lami && window.lami.connected) {
                 const p = (type === 'grant')
                     ? lami.call('setRole', { uuid: uuidVal, role: 'host' })
@@ -3826,44 +3865,27 @@
                     showToast(type === 'grant' ? "Rôle Hébergeur accordé." : "Rôle révoqué.",
                               type === 'grant' ? "success" : "info");
                     uuidInput.value = '';
+                    renderAdminPlayers();   // reflète immédiatement le changement
                 }).catch(function (err) {
                     showToast("Action refusée : " + err.message, "error");
                 });
                 return;
             }
-
-            if (type === 'grant') {
-                showToast(`Privilèges accordés à l'UUID: ${uuidVal}`, "success");
-                
-                const tbody = document.getElementById('admin-players-list');
-                const tr = document.createElement('tr');
-                tr.className = "hover:bg-neutral-900/40 border-b border-neutral-800/20";
-                tr.innerHTML = `
-                    <td class="py-3 flex items-center gap-2">
-                        <div class="w-6 h-6 bg-neutral-800 rounded overflow-hidden">
-                            <img src="https://api.mineatar.io/face/${uuidVal}?scale=8" onerror="this.src='https://api.mineatar.io/face/00000000000000000000000000000000?scale=8'" alt="Skin" class="w-6 h-6">
-                        </div>
-                        <span class="font-bold text-neutral-200">Nouveau_Host</span>
-                    </td>
-                    <td class="py-3 font-mono text-neutral-500">${uuidVal}</td>
-                    <td class="py-3">
-                        <span class="px-2 py-0.5 rounded bg-emerald-500/10 text-emerald-400 font-bold border border-emerald-500/20">Hébergeur</span>
-                    </td>
-                    <td class="py-3 text-right">
-                        <button onclick="this.closest('tr').remove(); showToast('Permissions révoquées.', 'info')" class="text-neutral-500 hover:text-red-400 font-semibold px-2 py-1 hover:bg-red-500/10 rounded transition-all">Révoquer</button>
-                    </td>
-                `;
-                tbody.appendChild(tr);
-                uuidInput.value = '';
-            } else {
-                showToast(`Révocation des droits pour l'UUID: ${uuidVal}`, "info");
-                uuidInput.value = '';
-            }
+            showToast("Disponible uniquement dans le launcher.", "info");
         }
 
-        function handleAdminListRevoke(playerName) {
-            showToast(`Permissions de "${playerName}" révoquées avec succès.`, "info");
-            event.target.closest('tr').remove();
+        function handleAdminListRevoke(uuid) {
+            showConfirm('Révoquer les droits',
+                        `Le joueur ${uuid} redeviendra simple Joueur (il ne pourra plus publier ni modifier de serveurs).`,
+                        'Révoquer').then(function (ok) {
+                if (!ok) return;
+                lami.call('removeRole', { uuid: uuid }).then(function () {
+                    showToast('Droits révoqués.', 'info');
+                    renderAdminPlayers();
+                }).catch(function (err) {
+                    showToast('Révocation refusée : ' + (err.message || err), 'error');
+                });
+            });
         }
 
         // ================= APPARENCE : couleur d'accent + fond d'écran =================
