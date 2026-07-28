@@ -1103,9 +1103,8 @@
                             <div class="flex flex-col gap-1.5">
                                 <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Fermeture du Launcher</label>
                                 <select id="setting-onlaunch" class="bg-dark-input hover:bg-neutral-800 transition border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-brand-500">
-                                    <option value="hide">Masquer le launcher au lancement du jeu</option>
+                                    <option value="hide">Garder en arrière-plan (fenêtre masquée, revient à la fermeture du jeu)</option>
                                     <option value="close">Fermer complètement le launcher</option>
-                                    <option value="keep">Garder le launcher ouvert en arrière-plan</option>
                                 </select>
                             </div>
                         </div>
@@ -1252,7 +1251,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.53.0";
+        const LAMI_VERSION = "0.54.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1264,8 +1263,7 @@
         function applyCloseBehavior() {
             if (typeof window.lamiWindowControl !== 'function') return;  // vieux shell
             if (currentCloseBehavior === 'close') window.lamiWindowControl('close');
-            else if (currentCloseBehavior === 'hide') window.lamiWindowControl('hide');
-            // 'keep' : on ne touche à rien.
+            else window.lamiWindowControl('hide');   // défaut : arrière-plan (masqué)
         }
         let isNavCollapsed = false;
         let isAssetsPanelVisible = false; // Gestionnaire de l'état déroulé de la grille
@@ -1318,8 +1316,10 @@
                 if (slider && s.ramGb) { slider.value = s.ramGb; updateRamSliderValue(s.ramGb); }
                 const g = document.getElementById('setting-path-game'); if (g) g.value = s.dataRoot || '';
                 const v = document.getElementById('setting-jvm');       if (v) v.value = s.jvmArgs || '';
-                const o = document.getElementById('setting-onlaunch');  if (o && s.closeBehavior) o.value = s.closeBehavior;
-                currentCloseBehavior = s.closeBehavior || 'hide';   // défaut = option affichée
+                // 'keep' (ancienne 3e option, fusionnée avec « masquer ») → 'hide'.
+                const savedClose = (s.closeBehavior === 'keep') ? 'hide' : s.closeBehavior;
+                const o = document.getElementById('setting-onlaunch');  if (o && savedClose) o.value = savedClose;
+                currentCloseBehavior = savedClose || 'hide';   // défaut = option affichée
                 if (g && s.defaultDataRoot) g.placeholder = 'Défaut : ' + s.defaultDataRoot;
                 // Apparence : applique la couleur d'accent et le fond enregistrés.
                 setAccent(s.accentColor && isValidHex(s.accentColor) ? s.accentColor : '#06b6d4', true);
@@ -1569,7 +1569,7 @@
                     setPlayButtonPlay();
                     appendGameLog(m.id, '--- Minecraft fermé ---');
                     // Launcher masqué pendant la partie → on le réaffiche.
-                    if (currentCloseBehavior === 'hide' && typeof window.lamiWindowControl === 'function')
+                    if (currentCloseBehavior !== 'close' && typeof window.lamiWindowControl === 'function')
                         window.lamiWindowControl('show');
                 });
                 lami.on('gameLog', function (m) {
