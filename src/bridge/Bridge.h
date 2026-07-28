@@ -60,6 +60,7 @@ private:
                             const QString &staging);
     void openUrl(int id, const QJsonObject &params);
     void uninstall(int id, const QJsonObject &params);
+    void openInstanceFolder(int id, const QJsonObject &params);
     void getSettings(int id);
     void setToken(int id, const QJsonObject &params);
     void listBackgrounds(int id);

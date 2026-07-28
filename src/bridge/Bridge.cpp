@@ -111,6 +111,8 @@ void Bridge::handle(const QJsonObject &request)
         openUrl(id, params);
     } else if (method == "uninstall") {
         uninstall(id, params);
+    } else if (method == "openInstanceFolder") {
+        openInstanceFolder(id, params);
     } else if (method == "listBackgrounds") {
         listBackgrounds(id);
     } else if (method == "getSettings") {
@@ -381,6 +383,23 @@ void Bridge::openUrl(int id, const QJsonObject &params)
 }
 
 // Désinstalle un serveur : supprime son instance locale.
+// Ouvre le dossier de l'instance dans l'explorateur de fichiers de l'OS.
+void Bridge::openInstanceFolder(int id, const QJsonObject &params)
+{
+    const QString sid = params.value("id").toString();
+    if (sid.isEmpty()) { replyError(id, "Identifiant manquant."); return; }
+    const QString path = QDir(config::dataRoot()).filePath("instances/" + sid);
+    QDir().mkpath(path);   // toujours ouvrable, même juste après installation
+#if defined(Q_OS_WIN)
+    QProcess::startDetached("explorer", {QDir::toNativeSeparators(path)});
+#elif defined(Q_OS_MACOS)
+    QProcess::startDetached("open", {path});
+#else
+    QProcess::startDetached("xdg-open", {path});
+#endif
+    replyOk(id, QJsonObject{{"opened", true}, {"path", path}});
+}
+
 void Bridge::uninstall(int id, const QJsonObject &params)
 {
     const QString sid = params.value("id").toString();

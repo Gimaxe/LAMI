@@ -548,10 +548,15 @@ function json(obj, status = 200) {
   return new Response(JSON.stringify(obj), { status, headers: { "Content-Type": "application/json" } });
 }
 function cors(resp) {
-  resp.headers.set("Access-Control-Allow-Origin", "*");
-  resp.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
-  resp.headers.set("Access-Control-Allow-Headers", "Content-Type");
-  return resp;
+  // Les réponses issues du cache edge (caches.default.match) ont des en-têtes
+  // IMMUABLES : les modifier jette « Can't modify immutable headers » → 500 sur
+  // chaque fichier déjà caché (les téléchargements marchaient une fois, puis
+  // cassaient). On repart donc toujours d'une copie mutable.
+  const r = new Response(resp.body, resp);
+  r.headers.set("Access-Control-Allow-Origin", "*");
+  r.headers.set("Access-Control-Allow-Methods", "POST, OPTIONS");
+  r.headers.set("Access-Control-Allow-Headers", "Content-Type");
+  return r;
 }
 function b64encode(str) {
   const bytes = new TextEncoder().encode(str);

@@ -329,10 +329,16 @@
                             <i data-lucide="arrow-left" class="w-4 h-4"></i>
                             <span>Rechercher un autre serveur</span>
                         </button>
-                        <button onclick="deleteInstalledServer()" class="flex items-center gap-1.5 text-xs text-red-500/80 hover:text-red-400 hover:bg-red-950/20 px-3 py-1.5 rounded-xl border border-red-950/40 transition-all font-bold cursor-pointer">
-                            <i data-lucide="trash-2" class="w-4 h-4"></i>
-                            <span>Désinstaller ce serveur</span>
-                        </button>
+                        <div class="flex items-center gap-2">
+                            <button onclick="openInstanceFolder()" class="flex items-center gap-1.5 text-xs text-neutral-400 hover:text-brand-500 hover:bg-neutral-900/60 px-3 py-1.5 rounded-xl border border-neutral-800 transition-all font-bold cursor-pointer">
+                                <i data-lucide="folder-open" class="w-4 h-4"></i>
+                                <span>Accéder aux fichiers</span>
+                            </button>
+                            <button onclick="deleteInstalledServer()" class="flex items-center gap-1.5 text-xs text-red-500/80 hover:text-red-400 hover:bg-red-950/20 px-3 py-1.5 rounded-xl border border-red-950/40 transition-all font-bold cursor-pointer">
+                                <i data-lucide="trash-2" class="w-4 h-4"></i>
+                                <span>Désinstaller ce serveur</span>
+                            </button>
+                        </div>
                     </div>
 
                     <!-- En-tête avec informations générales de l'instance -->
@@ -1247,7 +1253,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.46.0";
+        const LAMI_VERSION = "0.47.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -2935,6 +2941,17 @@
         function clearGameLogs() {
             if (currentlySelectedServer) delete gameLogs[currentlySelectedServer.id];
             renderGameLogs();
+        }
+
+        // Ouvre le dossier de l'instance dans l'explorateur de fichiers.
+        function openInstanceFolder() {
+            if (!currentlySelectedServer) return;
+            if (window.lami && window.lami.connected) {
+                lami.call('openInstanceFolder', { id: currentlySelectedServer.id })
+                    .catch(function (err) { showToast('Ouverture impossible : ' + (err.message || err), 'error'); });
+            } else {
+                showToast('Disponible uniquement dans le launcher.', 'info');
+            }
         }
 
         // --- SUPPRESSION DU SERVEUR DU LAUNCHER ---
