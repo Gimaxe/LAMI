@@ -62,6 +62,16 @@ private:
     void uninstall(int id, const QJsonObject &params);
     void openInstanceFolder(int id, const QJsonObject &params);
     void lookupName(int id, const QJsonObject &params);
+
+    // --- Skins (compte Minecraft de la session) ---
+    // Récupère le skin actif du compte et en sauvegarde une COPIE locale la
+    // première fois (sauvegarde de l'original, jamais écrasée).
+    void getAccountSkin(int id);
+    void listSkins(int id);                                  // fichiers du dossier skins
+    void importSkin(int id, const QJsonObject &params);      // ajoute un .png
+    void deleteSkinFile(int id, const QJsonObject &params);
+    void applySkin(int id, const QJsonObject &params);       // change le skin du compte
+    void openSkinsFolder(int id);
     void listInstanceFiles(int id, const QJsonObject &params);
     void deleteInstanceFiles(int id, const QJsonObject &params);
     void addInstanceFiles(int id, const QJsonObject &params);

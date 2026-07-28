@@ -976,31 +976,26 @@
 
                     </div>
 
-                    <!-- Barre d'actions épurée en bas -->
-                    <div class="grid grid-cols-1 md:grid-cols-4 gap-4 w-full">
-                        
-                        <!-- Bouton principal Équiper -->
-                        <button id="btn-equip-active-skin" onclick="equipSelectedSkinSlot()" class="py-4 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-extrabold rounded-2xl text-xs tracking-wider uppercase transition-all shadow-lg shadow-brand/10 flex items-center justify-center gap-2">
+                    <!-- Barre d'actions : import (petit) · appliquer (grand) · dossier (petit) -->
+                    <div class="flex items-stretch gap-3 w-full">
+
+                        <!-- Importer un .png : remplace le skin du slot affiché -->
+                        <button onclick="importSkinFile()" title="Importer un fichier .png dans ce slot"
+                                class="w-14 md:w-16 shrink-0 bg-neutral-850 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded-2xl border border-neutral-800 hover:border-neutral-700 transition-all flex items-center justify-center">
+                            <i data-lucide="upload" class="w-5 h-5"></i>
+                        </button>
+
+                        <!-- Action principale : applique le skin AU COMPTE Minecraft -->
+                        <button id="btn-equip-active-skin" onclick="equipSelectedSkinSlot()"
+                                class="flex-1 py-4 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-extrabold rounded-2xl text-xs tracking-wider uppercase transition-all shadow-lg shadow-brand/10 flex items-center justify-center gap-2">
                             <i data-lucide="check-circle" class="w-4.5 h-4.5"></i>
-                            <span>Équiper ce skin</span>
+                            <span>Utiliser ce skin</span>
                         </button>
 
-                        <!-- Bouton Charger un fichier .png -->
-                        <button onclick="simulateSkinFileInput()" class="py-4 bg-neutral-850 hover:bg-neutral-800 text-neutral-200 font-bold rounded-2xl text-xs tracking-wider uppercase border border-neutral-800 hover:border-neutral-700 transition-all flex items-center justify-center gap-2">
-                            <i data-lucide="folder-open" class="w-4.5 h-4.5 text-brand-500"></i>
-                            <span>Importer (.png)</span>
-                        </button>
-
-                        <!-- Bouton Vider le slot -->
-                        <button onclick="clearSkinSlot()" class="py-4 bg-neutral-850 hover:bg-red-950/20 hover:border-red-500/40 border border-neutral-800 text-neutral-400 hover:text-red-400 font-bold rounded-2xl text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2">
-                            <i data-lucide="trash-2" class="w-4.5 h-4.5"></i>
-                            <span>Vider le slot</span>
-                        </button>
-
-                        <!-- Bouton Dossier de stockage -->
-                        <button onclick="simulateOpenSkinsFolder()" class="py-4 bg-neutral-900 hover:bg-neutral-850 text-neutral-400 hover:text-neutral-200 font-semibold rounded-2xl text-xs tracking-wider uppercase border border-neutral-800/40 transition-all flex items-center justify-center gap-2">
-                            <i data-lucide="external-link" class="w-4.5 h-4.5"></i>
-                            <span>Dossier des skins</span>
+                        <!-- Dossier des skins -->
+                        <button onclick="openSkinsFolder()" title="Ouvrir le dossier des skins"
+                                class="w-14 md:w-16 shrink-0 bg-neutral-850 hover:bg-neutral-800 text-neutral-300 hover:text-white rounded-2xl border border-neutral-800 hover:border-neutral-700 transition-all flex items-center justify-center">
+                            <i data-lucide="folder-open" class="w-5 h-5"></i>
                         </button>
 
                     </div>
@@ -1251,7 +1246,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.57.0";
+        const LAMI_VERSION = "0.58.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1959,6 +1954,14 @@
             if (typeof char3DModels !== 'undefined' && char3DModels.length > 0)
                 updateCharacterSkin(0, skinIdentifier(slot));
             updateSkinInterface();
+
+            // Sauvegarde du skin d'ORIGINE dès la connexion (une seule fois) :
+            // il reste récupérable dans le dossier des skins après tout changement.
+            if (window.lami && window.lami.connected) {
+                lami.call('getAccountSkin').then(function (r) {
+                    if (r && r.variant) slot.variant = (r.variant || 'CLASSIC').toLowerCase();
+                }).catch(function () {});
+            }
         }
 
         function doMicrosoftLogin() {
@@ -2243,6 +2246,7 @@
                 const texture = new THREE.Texture(img);
                 texture.magFilter = THREE.NearestFilter;
                 texture.minFilter = THREE.NearestFilter;
+                texture.generateMipmaps = false;   // pixels nets, pas de moiré
                 texture.needsUpdate = true;
                 const is64x64 = (img.height === img.width);
                 callback(texture, is64x64);
@@ -2262,15 +2266,39 @@
                 texture.minFilter = THREE.NearestFilter;
                 callback(texture, true);
             };
-            img.src = `https://api.mineatar.io/skin/${username}`;
+            // Accepte une URL complète (data:, http…) ou un identifiant Minecraft
+            // (uuid/pseudo) — dans ce dernier cas on passe par mineatar.
+            img.src = /^(data:|https?:)/.test(username)
+                ? username
+                : `https://api.mineatar.io/skin/${username}`;
         }
+
+        // Skin affiché pour un slot vide : le PNG assets/default-skin.png s'il
+        // existe, sinon la silhouette sombre (repli intégré).
+        const DEFAULT_SKIN_URL = 'assets/default-skin.png';
 
         function updateCharacterSkin(slotId, username) {
             const skinData = skinCache[slotId];
             if (!skinData) return;
 
             if (skinData.empty) {
-                buildCharacterMesh(char3DModels[slotId], skinData);
+                // Tente le skin par défaut ; à défaut, silhouette.
+                const probe = new Image();
+                probe.onload = function () {
+                    loadMinecraftSkinTexture(DEFAULT_SKIN_URL, function (texture, is64x64) {
+                        skinData.texture = texture;
+                        skinData.is64x64 = is64x64;
+                        const asDefault = Object.assign({}, skinData, { empty: false });
+                        skinCache[slotId].texture = texture;
+                        skinCache[slotId].is64x64 = is64x64;
+                        skinCache[slotId].usesDefaultSkin = true;
+                        buildCharacterMesh(char3DModels[slotId], asDefault);
+                    });
+                };
+                probe.onerror = function () {
+                    buildCharacterMesh(char3DModels[slotId], skinData);   // silhouette
+                };
+                probe.src = DEFAULT_SKIN_URL;
                 return;
             }
 
@@ -2324,11 +2352,12 @@
 
             } else {
                 // Rendu standard du personnage Minecraft
-                const skinMat = new THREE.MeshStandardMaterial({ 
-                    map: skinData.texture, 
+                // Couche de base : opaque (alphaTest suffit). « transparent: true »
+                // déclenchait un tri par profondeur → scintillement sur les bords.
+                const skinMat = new THREE.MeshStandardMaterial({
+                    map: skinData.texture,
                     roughness: 0.85,
                     metalness: 0.05,
-                    transparent: true,
                     alphaTest: 0.5
                 });
 
@@ -2384,12 +2413,17 @@
                 // Sans elle, la tête paraissait « fausse » alors que les icônes
                 // (api.mineatar.io/face) composent bien base + overlay.
                 // Le casque existe même en 64x32 ; les autres sont 64x64 seulement.
+                // Overlay OPAQUE avec alphaTest (pas de tri de transparence) +
+                // polygonOffset : supprime le scintillement (z-fighting) entre la
+                // 2e couche et la couche de base quand elles sont très proches.
                 const overlayMat = new THREE.MeshStandardMaterial({
                     map: skinData.texture,
                     roughness: 0.85,
                     metalness: 0.05,
-                    transparent: true,
-                    alphaTest: 0.1,   // écarte les pixels transparents de l'overlay
+                    alphaTest: 0.5,
+                    polygonOffset: true,
+                    polygonOffsetFactor: -2,
+                    polygonOffsetUnits: -2,
                 });
                 const addOverlay = (w, h, d, u, v, uw, uh, ud, pos, name) => {
                     const geo = new THREE.BoxGeometry(w, h, d);
@@ -2488,32 +2522,103 @@
             updateSkinInterface();
         }
 
+        // Applique RÉELLEMENT le skin du slot affiché au compte Minecraft.
         function equipSelectedSkinSlot() {
             const activeSkin = skinCache[activeSlotIndex];
             if (!activeSkin || activeSkin.empty) return;
+            if (!(window.lami && window.lami.connected && isMicrosoftAuthed)) {
+                showToast("Connecte-toi avec Microsoft pour changer ton skin.", "error");
+                return;
+            }
+            if (activeSkin.isAccount) {
+                showToast("C'est déjà le skin de ton compte.", "info");
+                return;
+            }
+            if (!activeSkin.fileName && !activeSkin.dataUrl) {
+                showToast("Ce slot n'a pas de fichier de skin à appliquer.", "error");
+                return;
+            }
 
-            skinCache.forEach(s => s.isActive = false);
-            activeSkin.isActive = true;
+            const btn = document.getElementById('btn-equip-active-skin');
+            btn.disabled = true;
+            btn.innerHTML = '<i data-lucide="loader" class="w-4.5 h-4.5 animate-spin"></i><span>Application…</span>';
+            lucide.createIcons();
 
-            document.getElementById('player-name').innerText = activeSkin.name;
-            document.getElementById('player-avatar').src = `https://api.mineatar.io/face/${activeSkin.name}?scale=8`;
-
-            showToast(`Le skin "${activeSkin.name}" a été équipé !`, "success");
-            updateSkinInterface();
+            lami.call('applySkin', { file: activeSkin.fileName, variant: activeSkin.variant || 'classic' }, 120000)
+                .then(function () {
+                    skinCache.forEach(s => s.isActive = false);
+                    activeSkin.isActive = true;
+                    showToast("Skin appliqué à ton compte Minecraft !", "success");
+                    // Le slot « compte » et l'avatar reflètent le nouveau skin
+                    // (paramètre anti-cache pour forcer le rechargement).
+                    refreshAccountSkinTexture();
+                    updateSkinInterface();
+                })
+                .catch(function (err) {
+                    showToast("Changement refusé : " + (err.message || err), "error");
+                    updateSkinInterface();
+                });
         }
 
-        function simulateSkinFileInput() {
-            const inputName = prompt("Entrez le pseudo Minecraft du skin à importer :");
-            if (!inputName || inputName.trim() === "") return;
+        // Recharge la texture du slot compte + l'avatar après un changement.
+        function refreshAccountSkinTexture() {
+            const accountSlot = skinCache[0];
+            if (!accountSlot || !accountSlot.uuid) return;
+            const bust = '?t=' + Date.now();
+            const avatar = document.getElementById('player-avatar');
+            if (avatar) avatar.src = `https://api.mineatar.io/face/${accountSlot.uuid}?scale=8&t=${Date.now()}`;
+            if (typeof char3DModels !== 'undefined' && char3DModels.length > 0)
+                updateCharacterSkin(0, accountSlot.uuid + bust);
+        }
 
-            const targetSkin = skinCache[activeSlotIndex];
-            if (targetSkin) {
-                targetSkin.name = inputName.trim();
-                targetSkin.empty = false;
-                updateCharacterSkin(activeSlotIndex, targetSkin.name);
-                updateSkinInterface();
-                showToast(`Fichier skin pour "${targetSkin.name}" importé avec succès !`, "success");
+        // Importe un .png : enregistré dans le dossier des skins ET appliqué au
+        // slot affiché (aperçu 3D immédiat, sans toucher au compte).
+        function importSkinFile() {
+            if (!(window.lami && window.lami.connected)) {
+                showToast("Disponible uniquement dans le launcher.", "info");
+                return;
             }
+            const target = skinCache[activeSlotIndex];
+            if (target && target.isAccount) {
+                showToast("Choisis un autre slot : celui-ci affiche le skin actuel de ton compte.", "info");
+                return;
+            }
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.png,image/png';
+            input.onchange = function () {
+                const file = (input.files || [])[0];
+                if (!file) return;
+                fileToBase64(file).then(function (b64) {
+                    return lami.call('importSkin', { name: file.name, base64: b64 }).then(function (r) {
+                        target.fileName = r.file;
+                        target.name = r.file.replace(/\.png$/i, '');
+                        target.empty = false;
+                        target.uuid = '';
+                        target.dataUrl = 'data:image/png;base64,' + b64;
+                        // Aperçu direct depuis les octets importés.
+                        loadMinecraftSkinTexture(target.dataUrl, function (texture, is64x64) {
+                            target.texture = texture;
+                            target.is64x64 = is64x64;
+                            buildCharacterMesh(char3DModels[activeSlotIndex], target);
+                        });
+                        updateSkinInterface();
+                        showToast(`Skin « ${target.name} » importé.`, "success");
+                    });
+                }).catch(function (err) {
+                    showToast("Import échoué : " + (err.message || err), "error");
+                });
+            };
+            input.click();
+        }
+
+        function openSkinsFolder() {
+            if (!(window.lami && window.lami.connected)) {
+                showToast("Disponible uniquement dans le launcher.", "info");
+                return;
+            }
+            lami.call('openSkinsFolder')
+                .catch(function (err) { showToast("Ouverture impossible : " + (err.message || err), "error"); });
         }
 
         function clearSkinSlot() {
@@ -2538,9 +2643,6 @@
             showToast(`L'emplacement ${activeSlotIndex + 1} a été vidé.`, "info");
         }
 
-        function simulateOpenSkinsFolder() {
-            showToast("Ouverture du dossier : C:\\Users\\Atraxe\\.lmau\\skins\\", "info");
-        }
 
         function setupDragAndDrop() {
             const dropZone = document.getElementById('skin-drop-zone');

@@ -11,6 +11,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QHttpMultiPart>
 #include <QCoreApplication>
 #include <QProcess>
 #include <QStandardPaths>
@@ -117,6 +118,18 @@ void Bridge::handle(const QJsonObject &request)
         openInstanceFolder(id, params);
     } else if (method == "lookupName") {
         lookupName(id, params);
+    } else if (method == "getAccountSkin") {
+        getAccountSkin(id);
+    } else if (method == "listSkins") {
+        listSkins(id);
+    } else if (method == "importSkin") {
+        importSkin(id, params);
+    } else if (method == "deleteSkinFile") {
+        deleteSkinFile(id, params);
+    } else if (method == "applySkin") {
+        applySkin(id, params);
+    } else if (method == "openSkinsFolder") {
+        openSkinsFolder(id);
     } else if (method == "refreshRole") {
         // Re-demande le rôle courant au Worker (roles.json relu à cet instant).
         if (!m_session.valid) { replyError(id, "Non connecté."); return; }
@@ -510,6 +523,169 @@ void Bridge::lookupName(int id, const QJsonObject &params)
         // Pseudo introuvable (204/erreur) : on répond quand même, l'UI gardera l'UUID.
         replyOk(id, QJsonObject{{"uuid", uuid}, {"name", name}});
     });
+}
+
+// ---------------------------------------------------------------- Skins
+namespace {
+QString skinsDir()
+{
+    const QString p = QDir(config::dataRoot()).filePath("skins");
+    QDir().mkpath(p);
+    return p;
+}
+// Ouvre un dossier dans l'explorateur de fichiers de l'OS.
+void openInExplorer(const QString &path)
+{
+#if defined(Q_OS_WIN)
+    QProcess::startDetached("explorer", {QDir::toNativeSeparators(path)});
+#elif defined(Q_OS_MACOS)
+    QProcess::startDetached("open", {path});
+#else
+    QProcess::startDetached("xdg-open", {path});
+#endif
+}
+} // namespace
+
+// Skin actif du compte : lu sur l'API Minecraft avec le token de la session.
+// La PREMIÈRE fois, une copie est enregistrée dans skins/original-<pseudo>.png
+// et n'est jamais écrasée : le skin d'origine ne peut pas être perdu.
+void Bridge::getAccountSkin(int id)
+{
+    if (!m_session.valid) { replyError(id, "Connecte-toi avec Microsoft."); return; }
+    QNetworkRequest req{QUrl("https://api.minecraftservices.com/minecraft/profile")};
+    req.setRawHeader("Authorization", QByteArray("Bearer ") + m_session.minecraftToken.toUtf8());
+    req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+    QNetworkReply *reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, id, reply]() {
+        reply->deleteLater();
+        if (reply->error() != QNetworkReply::NoError) {
+            replyError(id, "Profil Minecraft illisible : " + reply->errorString());
+            return;
+        }
+        const QJsonObject prof = QJsonDocument::fromJson(reply->readAll()).object();
+        QString url, variant;
+        for (const QJsonValue &v : prof.value("skins").toArray()) {
+            const QJsonObject s = v.toObject();
+            if (s.value("state").toString().toUpper() == "ACTIVE") {
+                url = s.value("url").toString();
+                variant = s.value("variant").toString("CLASSIC");
+                break;
+            }
+        }
+        if (url.isEmpty()) { replyOk(id, QJsonObject{{"url", ""}, {"variant", "CLASSIC"}}); return; }
+
+        // Sauvegarde de l'original (une seule fois).
+        const QString backup = QDir(skinsDir())
+            .filePath("original-" + QString(m_session.name).replace(QRegularExpression("[^A-Za-z0-9_-]"), "_") + ".png");
+        if (QFileInfo::exists(backup)) {
+            replyOk(id, QJsonObject{{"url", url}, {"variant", variant}, {"backup", backup}});
+            return;
+        }
+        QNetworkRequest dreq{QUrl(url)};
+        dreq.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+        QNetworkReply *dl = m_net->get(dreq);
+        connect(dl, &QNetworkReply::finished, this, [this, id, dl, url, variant, backup]() {
+            dl->deleteLater();
+            QString saved;
+            if (dl->error() == QNetworkReply::NoError) {
+                QFile f(backup);
+                if (f.open(QIODevice::WriteOnly)) { f.write(dl->readAll()); saved = backup; }
+            }
+            replyOk(id, QJsonObject{{"url", url}, {"variant", variant}, {"backup", saved}});
+        });
+    });
+}
+
+void Bridge::listSkins(int id)
+{
+    QJsonArray arr;
+    const QDir d(skinsDir());
+    for (const QFileInfo &fi : d.entryInfoList({"*.png"}, QDir::Files, QDir::Name))
+        arr.append(QJsonObject{{"file", fi.fileName()},
+                               {"path", fi.absoluteFilePath()},
+                               {"size", double(fi.size())}});
+    replyOk(id, QJsonObject{{"skins", arr}, {"folder", skinsDir()}});
+}
+
+void Bridge::importSkin(int id, const QJsonObject &params)
+{
+    const QString name = QFileInfo(params.value("name").toString()).fileName();
+    const QString b64 = params.value("base64").toString();
+    if (name.isEmpty() || b64.isEmpty()) { replyError(id, "Fichier manquant."); return; }
+    QString safe = name;
+    if (!safe.endsWith(".png", Qt::CaseInsensitive)) safe += ".png";
+    const QString dest = QDir(skinsDir()).filePath(safe);
+    QFile f(dest);
+    if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { replyError(id, "Écriture impossible."); return; }
+    f.write(QByteArray::fromBase64(b64.toUtf8()));
+    replyOk(id, QJsonObject{{"file", safe}, {"path", dest}});
+}
+
+void Bridge::deleteSkinFile(int id, const QJsonObject &params)
+{
+    const QString name = QFileInfo(params.value("file").toString()).fileName();
+    if (name.isEmpty()) { replyError(id, "Fichier manquant."); return; }
+    if (name.startsWith("original-")) { replyError(id, "Le skin d'origine est protégé."); return; }
+    const bool ok = QFile::remove(QDir(skinsDir()).filePath(name));
+    replyOk(id, QJsonObject{{"deleted", ok}});
+}
+
+// Applique un skin AU COMPTE Minecraft (upload multipart authentifié).
+// L'appel part de la machine du joueur : pas de blocage réseau (contrairement
+// au Worker), et le token ne quitte jamais le poste.
+void Bridge::applySkin(int id, const QJsonObject &params)
+{
+    if (!m_session.valid) { replyError(id, "Connecte-toi avec Microsoft."); return; }
+    const QString variant = params.value("variant").toString("classic").toLower();
+
+    QByteArray png;
+    const QString file = QFileInfo(params.value("file").toString()).fileName();
+    if (!file.isEmpty()) {
+        QFile f(QDir(skinsDir()).filePath(file));
+        if (!f.open(QIODevice::ReadOnly)) { replyError(id, "Skin introuvable : " + file); return; }
+        png = f.readAll();
+    } else {
+        png = QByteArray::fromBase64(params.value("base64").toString().toUtf8());
+    }
+    if (png.isEmpty()) { replyError(id, "Image vide."); return; }
+    if (!png.startsWith("\x89PNG")) { replyError(id, "Le fichier doit être un PNG."); return; }
+
+    auto *multi = new QHttpMultiPart(QHttpMultiPart::FormDataType);
+    QHttpPart vpart;
+    vpart.setHeader(QNetworkRequest::ContentDispositionHeader, QVariant("form-data; name=\"variant\""));
+    vpart.setBody(variant == "slim" ? "slim" : "classic");
+    multi->append(vpart);
+
+    QHttpPart fpart;
+    fpart.setHeader(QNetworkRequest::ContentTypeHeader, QVariant("image/png"));
+    fpart.setHeader(QNetworkRequest::ContentDispositionHeader,
+                    QVariant("form-data; name=\"file\"; filename=\"skin.png\""));
+    fpart.setBody(png);
+    multi->append(fpart);
+
+    QNetworkRequest req{QUrl("https://api.minecraftservices.com/minecraft/profile/skins")};
+    req.setRawHeader("Authorization", QByteArray("Bearer ") + m_session.minecraftToken.toUtf8());
+    req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+    QNetworkReply *reply = m_net->post(req, multi);
+    multi->setParent(reply);   // libéré avec la réponse
+    connect(reply, &QNetworkReply::finished, this, [this, id, reply]() {
+        reply->deleteLater();
+        const int status = reply->attribute(QNetworkRequest::HttpStatusCodeAttribute).toInt();
+        const QByteArray body = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError || status >= 300) {
+            replyError(id, QStringLiteral("Changement de skin refusé [HTTP %1] : %2")
+                               .arg(status).arg(QString::fromUtf8(body.left(300))));
+            return;
+        }
+        replyOk(id, QJsonObject{{"applied", true}});
+    });
+}
+
+void Bridge::openSkinsFolder(int id)
+{
+    const QString p = skinsDir();
+    openInExplorer(p);
+    replyOk(id, QJsonObject{{"opened", true}, {"path", p}});
 }
 
 // Ouvre le dossier de l'instance dans l'explorateur de fichiers de l'OS.
