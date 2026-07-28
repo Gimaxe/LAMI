@@ -974,6 +974,12 @@
                             </button>
                         </div>
 
+                        <!-- Nom du slot affiché au centre du carrousel -->
+                        <div class="flex items-center gap-2 pb-1">
+                            <span id="skin-slot-label" class="text-sm font-black text-white">—</span>
+                            <span id="skin-slot-badge" class="hidden text-[9px] font-bold uppercase tracking-wider text-brand-500/90 bg-brand/10 border border-brand/20 px-2 py-0.5 rounded">Mon compte</span>
+                        </div>
+
                     </div>
 
                     <!-- Barre d'actions épurée en bas -->
@@ -1251,7 +1257,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.55.0";
+        const LAMI_VERSION = "0.56.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1338,9 +1344,13 @@
         let skinCache = [
             {
                 id: 1,
-                name: "Valkyrie_91",
+                // Slot 1 = compte Microsoft/Minecraft connecté. Renseigné par
+                // applyLoginSession() (pseudo + uuid) ; valeurs de démo avant login.
+                name: "Mon compte",
+                uuid: "",
+                isAccount: true,
                 isActive: true,
-                empty: false,
+                empty: true,   // silhouette tant qu'aucune session n'est connectée
                 colors: { head: 0xffdbac, torso: 0x0a5c5a, arm: 0x0d9488, leg: 0x1f2937, hair: 0x3d2314 }
             },
             {
@@ -1940,6 +1950,21 @@
             if (session.role) setDemoRole(session.role);
             setLoginBusy(false);
             hideLoginModal();
+            applyAccountSkin(session);   // slot 1 = skin du compte connecté
+        }
+
+        // Le premier slot de la page Skins affiche TOUJOURS le skin du compte
+        // Minecraft connecté (chargé par UUID). Rafraîchit le rendu 3D si la vue
+        // est déjà construite.
+        function applyAccountSkin(session) {
+            const slot = skinCache[0];
+            if (!slot || !session) return;
+            slot.name = session.name || 'Mon compte';
+            slot.uuid = (session.uuid || '').replace(/-/g, '');
+            slot.empty = false;
+            if (typeof char3DModels !== 'undefined' && char3DModels.length > 0)
+                updateCharacterSkin(0, skinIdentifier(slot));
+            updateSkinInterface();
         }
 
         function doMicrosoftLogin() {
@@ -2076,8 +2101,9 @@
                 carouselGroup.add(charGroup);
                 char3DModels.push(charGroup);
                 
-                updateCharacterSkin(i, skinCache[i].name);
+                updateCharacterSkin(i, skinIdentifier(skinCache[i]));
             }
+            updateSkinInterface();   // nom du slot + badge dès l'ouverture
 
             container.addEventListener('mousedown', onMouseDown3D);
             container.addEventListener('touchstart', onTouchStart3D);
@@ -2204,6 +2230,13 @@
             mapFace(5, u + d + w + d, v + d, w, h);      // Back
 
             uvAttr.needsUpdate = true;
+        }
+
+        // Identifiant à utiliser pour récupérer la texture : l'UUID quand on l'a
+        // (compte connecté — fiable même si le pseudo change), sinon le pseudo.
+        function skinIdentifier(slot) {
+            if (!slot) return '';
+            return (slot.uuid && slot.uuid.replace(/-/g, '')) || slot.name;
         }
 
         function loadMinecraftSkinTexture(username, callback) {
@@ -2399,6 +2432,12 @@
             const activeSkin = skinCache[activeSlotIndex];
             if (!activeSkin) return;
 
+            // Nom du slot affiché + badge « Mon compte » sur le slot du compte.
+            const label = document.getElementById('skin-slot-label');
+            const badge = document.getElementById('skin-slot-badge');
+            if (label) label.innerText = activeSkin.empty ? 'Slot vide' : activeSkin.name;
+            if (badge) badge.classList.toggle('hidden', !activeSkin.isAccount);
+
             const btnEquip = document.getElementById('btn-equip-active-skin');
             if (activeSkin.empty) {
                 btnEquip.disabled = true;
@@ -2457,6 +2496,12 @@
         function clearSkinSlot() {
             const activeSkin = skinCache[activeSlotIndex];
             if (!activeSkin) return;
+
+            // Le slot du compte reflète le skin Minecraft réel : il ne se vide pas.
+            if (activeSkin.isAccount) {
+                showToast("Ce slot affiche le skin de ton compte Minecraft.", "info");
+                return;
+            }
 
             if (activeSkin.isActive) {
                 showToast("Vous ne pouvez pas vider le skin actuellement équipé.", "error");
