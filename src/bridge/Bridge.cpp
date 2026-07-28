@@ -1,5 +1,6 @@
 #include "bridge/Bridge.h"
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QFileInfo>
@@ -703,6 +704,29 @@ void Bridge::listInstalled(int id)
     replyOk(id, QJsonObject{{"installed", arr}});
 }
 
+namespace {
+// Valeur mémorisée du « rester connecté » : « v2|<epochSecs>|<refreshToken> ».
+// L'horodatage est celui du LOGIN INITIAL (échéance fixe de 30 jours).
+QString saveRememberValue(const QString &refreshToken, qint64 savedAtSecs)
+{
+    return QStringLiteral("v2|%1|%2").arg(savedAtSecs).arg(refreshToken);
+}
+// Renvoie le refresh token et pose *savedAtSecs. Ancien format (token brut,
+// sans date) : considéré comme daté d'aujourd'hui (migration douce).
+QString parseRememberValue(const QString &stored, qint64 *savedAtSecs)
+{
+    if (stored.startsWith(QStringLiteral("v2|"))) {
+        const int sep = stored.indexOf('|', 3);
+        if (sep > 3) {
+            *savedAtSecs = stored.mid(3, sep - 3).toLongLong();
+            return stored.mid(sep + 1);
+        }
+    }
+    *savedAtSecs = QDateTime::currentSecsSinceEpoch();
+    return stored;
+}
+} // namespace
+
 // Résout le rôle (via le Worker si configuré, sinon roles.json + repli owner)
 // puis répond à l'UI avec uuid/name/token/role.
 void Bridge::resolveRoleAndReply(int id, const MinecraftSession &s)
@@ -795,9 +819,12 @@ void Bridge::login(int id, const QJsonObject &params)
         m_session = s;
         m_auth->deleteLater();
         m_auth = nullptr;
-        // « Se souvenir de moi » : refresh token chiffré par l'OS (DPAPI/libsecret).
+        // « Se souvenir de moi » : refresh token chiffré par l'OS (DPAPI/libsecret),
+        // horodaté — la session mémorisée expire 30 jours après CE login (la date
+        // ne glisse pas à chaque reconnexion silencieuse).
         if (remember && !s.msRefreshToken.isEmpty())
-            secret::save("msrefresh", s.msRefreshToken);
+            secret::save("msrefresh", saveRememberValue(s.msRefreshToken,
+                                                        QDateTime::currentSecsSinceEpoch()));
         resolveRoleAndReply(id, s);
     });
     connect(m_auth, &MicrosoftAuth::failed, this, [this, id](const QString &msg) {
@@ -811,20 +838,32 @@ void Bridge::login(int id, const QJsonObject &params)
 // Reconnexion silencieuse au démarrage via le refresh token sauvegardé.
 void Bridge::silentLogin(int id)
 {
-    const QString refresh = secret::load("msrefresh");
-    if (refresh.isEmpty()) { replyError(id, "Aucune session mémorisée."); return; }
+    const QString stored = secret::load("msrefresh");
+    if (stored.isEmpty()) { replyError(id, "Aucune session mémorisée."); return; }
     const QString clientId = config::clientId();
     if (clientId.isEmpty()) { replyError(id, "client_id Azure manquant."); return; }
     if (m_auth) { m_auth->deleteLater(); m_auth = nullptr; }
 
+    // Décode « v2|<epoch>|<token> » (ancien format : token brut → migré avec
+    // la date du jour). Au-delà de 30 jours : on redemande le login complet.
+    qint64 savedAt = 0;
+    const QString refresh = parseRememberValue(stored, &savedAt);
+    constexpr qint64 kMaxAgeSecs = 30LL * 24 * 3600;
+    if (QDateTime::currentSecsSinceEpoch() - savedAt > kMaxAgeSecs) {
+        secret::clear("msrefresh");
+        replyError(id, "Session mémorisée expirée (30 jours) : reconnecte-toi.");
+        return;
+    }
+
     m_auth = new MicrosoftAuth(clientId, this);
-    connect(m_auth, &MicrosoftAuth::authenticated, this, [this, id](const MinecraftSession &s) {
+    connect(m_auth, &MicrosoftAuth::authenticated, this, [this, id, savedAt](const MinecraftSession &s) {
         m_session = s;
         m_auth->deleteLater();
         m_auth = nullptr;
-        // Le refresh token tourne : on réécrit le nouveau (chiffré).
+        // Le refresh token tourne : on réécrit le nouveau (chiffré) en CONSERVANT
+        // la date du login initial (l'échéance des 30 jours ne bouge pas).
         if (!s.msRefreshToken.isEmpty())
-            secret::save("msrefresh", s.msRefreshToken);
+            secret::save("msrefresh", saveRememberValue(s.msRefreshToken, savedAt));
         resolveRoleAndReply(id, s);
     });
     connect(m_auth, &MicrosoftAuth::failed, this, [this, id](const QString &msg) {
