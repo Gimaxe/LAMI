@@ -1256,7 +1256,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.59.0";
+        const LAMI_VERSION = "0.60.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1967,11 +1967,13 @@
                 updateCharacterSkin(0, skinIdentifier(slot));
             updateSkinInterface();
 
-            // Sauvegarde du skin d'ORIGINE dès la connexion (une seule fois) :
-            // il reste récupérable dans le dossier des skins après tout changement.
+            // Sauvegarde du skin d'ORIGINE dès la connexion (skin-1.png, écrit une
+            // seule fois), puis restauration des emplacements depuis les fichiers :
+            // le slot 1 redevient le skin d'origine, les slots 2-3 leurs imports.
             if (window.lami && window.lami.connected) {
                 lami.call('getAccountSkin').then(function (r) {
                     if (r && r.variant) slot.variant = (r.variant || 'CLASSIC').toLowerCase();
+                    restoreSkinSlots();
                 }).catch(function () {});
             }
         }
@@ -2115,7 +2117,8 @@
                 
                 updateCharacterSkin(i, skinIdentifier(skinCache[i]));
             }
-            updateSkinInterface();   // nom du slot + badge dès l'ouverture
+            updateSkinInterface();
+            restoreSkinSlots();   // remet les skins importés dans leurs emplacements
 
             container.addEventListener('mousedown', onMouseDown3D);
             container.addEventListener('touchstart', onTouchStart3D);
@@ -2546,10 +2549,6 @@
                 showToast("Connecte-toi avec Microsoft pour changer ton skin.", "error");
                 return;
             }
-            if (activeSkin.isAccount) {
-                showToast("C'est déjà le skin de ton compte.", "info");
-                return;
-            }
             if (!activeSkin.fileName && !activeSkin.dataUrl) {
                 showToast("Ce slot n'a pas de fichier de skin à appliquer.", "error");
                 return;
@@ -2605,27 +2604,57 @@
             input.onchange = function () {
                 const file = (input.files || [])[0];
                 if (!file) return;
+                const slotNumber = activeSlotIndex + 1;   // slot 1 = skin d'origine
                 fileToBase64(file).then(function (b64) {
-                    return lami.call('importSkin', { name: file.name, base64: b64 }).then(function (r) {
-                        target.fileName = r.file;
-                        target.name = r.file.replace(/\.png$/i, '');
-                        target.empty = false;
-                        target.uuid = '';
-                        target.dataUrl = 'data:image/png;base64,' + b64;
-                        // Aperçu direct depuis les octets importés.
-                        loadMinecraftSkinTexture(target.dataUrl, function (texture, is64x64) {
-                            target.texture = texture;
-                            target.is64x64 = is64x64;
-                            buildCharacterMesh(char3DModels[activeSlotIndex], target);
-                        });
-                        updateSkinInterface();
-                        showToast(`Skin « ${target.name} » importé.`, "success");
+                    return lami.call('importSkin', { slot: slotNumber, base64: b64 }).then(function (r) {
+                        applySkinToSlot(activeSlotIndex, r.file, b64);
+                        showToast(`Skin importé dans l'emplacement ${slotNumber}.`, "success");
                     });
                 }).catch(function (err) {
                     showToast("Import échoué : " + (err.message || err), "error");
                 });
             };
             input.click();
+        }
+
+        // Renseigne un slot avec les octets d'un skin (import ou restauration au
+        // démarrage) et met à jour le rendu 3D.
+        function applySkinToSlot(index, fileName, base64) {
+            const slot = skinCache[index];
+            if (!slot) return;
+            slot.fileName = fileName;
+            slot.name = fileName.replace(/\.png$/i, '');
+            slot.empty = false;
+            slot.uuid = '';
+            slot.dataUrl = 'data:image/png;base64,' + base64;
+            if (typeof char3DModels !== 'undefined' && char3DModels[index]) {
+                loadMinecraftSkinTexture(slot.dataUrl, function (texture, is64x64) {
+                    slot.texture = texture;
+                    slot.is64x64 = is64x64;
+                    buildCharacterMesh(char3DModels[index], slot);
+                });
+            }
+            updateSkinInterface();
+        }
+
+        // Restaure les emplacements depuis les fichiers skin-N.png du dossier des
+        // skins : un skin importé reste en place après redémarrage du launcher.
+        function restoreSkinSlots() {
+            if (!(window.lami && window.lami.connected)) return;
+            lami.call('listSkins').then(function (r) {
+                (r.skins || []).forEach(function (s) {
+                    const index = s.slot - 1;      // slot 1 -> index 0
+                    if (index < 0 || index >= skinCache.length) return;
+                    if (!s.base64) return;
+                    applySkinToSlot(index, s.file, s.base64);
+                    // Le slot 1 conserve son identité « skin d'origine » : on peut
+                    // y revenir après avoir essayé un autre skin.
+                    if (index === 0) {
+                        skinCache[0].isAccount = true;
+                        skinCache[0].name = "Skin d'origine";
+                    }
+                });
+            }).catch(function () {});
         }
 
         function openSkinsFolder() {

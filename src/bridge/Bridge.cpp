@@ -574,9 +574,8 @@ void Bridge::getAccountSkin(int id)
         }
         if (url.isEmpty()) { replyOk(id, QJsonObject{{"url", ""}, {"variant", "CLASSIC"}}); return; }
 
-        // Sauvegarde de l'original (une seule fois).
-        const QString backup = QDir(skinsDir())
-            .filePath("original-" + QString(m_session.name).replace(QRegularExpression("[^A-Za-z0-9_-]"), "_") + ".png");
+        // Sauvegarde de l'original dans le SLOT 1 (une seule fois, jamais écrasé).
+        const QString backup = QDir(skinsDir()).filePath("skin-1.png");
         if (QFileInfo::exists(backup)) {
             replyOk(id, QJsonObject{{"url", url}, {"variant", variant}, {"backup", backup}});
             return;
@@ -596,36 +595,50 @@ void Bridge::getAccountSkin(int id)
     });
 }
 
+// Liste les skins par SLOT (skin-1.png = original du compte, skin-2, skin-3…)
+// et renvoie leur contenu : l'UI peut ainsi restaurer les emplacements au
+// démarrage, sans dépendre de chemins file:// (petits fichiers, ~quelques Ko).
 void Bridge::listSkins(int id)
 {
     QJsonArray arr;
     const QDir d(skinsDir());
-    for (const QFileInfo &fi : d.entryInfoList({"*.png"}, QDir::Files, QDir::Name))
-        arr.append(QJsonObject{{"file", fi.fileName()},
-                               {"path", fi.absoluteFilePath()},
-                               {"size", double(fi.size())}});
+    for (const QFileInfo &fi : d.entryInfoList({"skin-*.png"}, QDir::Files, QDir::Name)) {
+        const int slot = QStringView{fi.baseName()}.mid(5).toInt();   // "skin-N"
+        if (slot <= 0) continue;
+        QFile f(fi.absoluteFilePath());
+        QString b64;
+        if (f.open(QIODevice::ReadOnly))
+            b64 = QString::fromLatin1(f.readAll().toBase64());
+        arr.append(QJsonObject{{"file", fi.fileName()}, {"slot", slot},
+                               {"size", double(fi.size())}, {"base64", b64}});
+    }
     replyOk(id, QJsonObject{{"skins", arr}, {"folder", skinsDir()}});
 }
 
+// Importe un skin DANS UN SLOT : toujours enregistré sous skin-<slot>.png
+// (nommage stable → l'emplacement retrouve son skin au prochain démarrage).
 void Bridge::importSkin(int id, const QJsonObject &params)
 {
-    const QString name = QFileInfo(params.value("name").toString()).fileName();
+    const int slot = params.value("slot").toInt(0);
     const QString b64 = params.value("base64").toString();
-    if (name.isEmpty() || b64.isEmpty()) { replyError(id, "Fichier manquant."); return; }
-    QString safe = name;
-    if (!safe.endsWith(".png", Qt::CaseInsensitive)) safe += ".png";
-    const QString dest = QDir(skinsDir()).filePath(safe);
+    if (slot <= 1) { replyError(id, "Slot invalide (1 est réservé au skin d'origine)."); return; }
+    if (b64.isEmpty()) { replyError(id, "Fichier manquant."); return; }
+    const QByteArray png = QByteArray::fromBase64(b64.toUtf8());
+    if (!png.startsWith("\x89PNG")) { replyError(id, "Le fichier doit être un PNG."); return; }
+
+    const QString name = QStringLiteral("skin-%1.png").arg(slot);
+    const QString dest = QDir(skinsDir()).filePath(name);
     QFile f(dest);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { replyError(id, "Écriture impossible."); return; }
-    f.write(QByteArray::fromBase64(b64.toUtf8()));
-    replyOk(id, QJsonObject{{"file", safe}, {"path", dest}});
+    f.write(png);
+    replyOk(id, QJsonObject{{"file", name}, {"slot", slot}, {"path", dest}});
 }
 
 void Bridge::deleteSkinFile(int id, const QJsonObject &params)
 {
     const QString name = QFileInfo(params.value("file").toString()).fileName();
     if (name.isEmpty()) { replyError(id, "Fichier manquant."); return; }
-    if (name.startsWith("original-")) { replyError(id, "Le skin d'origine est protégé."); return; }
+    if (name == "skin-1.png") { replyError(id, "Le skin d'origine est protégé."); return; }
     const bool ok = QFile::remove(QDir(skinsDir()).filePath(name));
     replyOk(id, QJsonObject{{"deleted", ok}});
 }
