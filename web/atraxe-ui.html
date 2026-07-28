@@ -12,6 +12,10 @@
         tailwind.config = {
             theme: {
                 extend: {
+                    // Paliers au-delà du 2xl (1536px) de Tailwind : sans eux, sur
+                    // un écran 2K/4K l'interface restait figée dans une colonne
+                    // étroite au centre.
+                    screens: { '3xl': '1920px', '4xl': '2560px', '5xl': '3200px' },
                     colors: {
                         brand: {
                             50:  'rgb(var(--brand-50) / <alpha-value>)',
@@ -53,6 +57,12 @@
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
         }
+        /* Écrans 2K / 4K : sans mise à l'échelle, tout paraît minuscule et perdu
+           au centre. On agrandit la base typographique (les tailles Tailwind en
+           rem suivent automatiquement) en plus des largeurs de conteneurs. */
+        @media (min-width: 1920px) { html { font-size: 17px; } }
+        @media (min-width: 2560px) { html { font-size: 19px; } }
+        @media (min-width: 3200px) { html { font-size: 22px; } }
         /* Cases à cocher custom (panneau des fichiers d'instance) : intégrées au
            style du launcher — carré arrondi sombre, coche dessinée en CSS,
            accent de la couleur du thème quand cochée. */
@@ -121,7 +131,7 @@
 <body class="h-full flex overflow-hidden select-none">
 
     <!-- BARRE LATÉRALE (FIXE, ~300px) -->
-    <aside class="w-72 bg-dark-sidebar border-r border-neutral-800/60 flex flex-col justify-between flex-shrink-0 h-full">
+    <aside class="w-72 3xl:w-80 4xl:w-96 bg-dark-sidebar border-r border-neutral-800/60 flex flex-col justify-between flex-shrink-0 h-full">
         
         <!-- Section supérieure : Logo et Menu de Navigation (Fixe, ne défile pas) -->
         <div class="p-6 pb-2 flex flex-col gap-6 flex-shrink-0">
@@ -266,7 +276,7 @@
         <div class="flex-1 overflow-y-auto p-8 flex flex-col" id="content-area">
             
             <!-- ================= ONGLET : REJOINDRE ================= -->
-            <div id="tab-content-rejoindre" class="tab-panel flex flex-col gap-6 max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto w-full h-full">
+            <div id="tab-content-rejoindre" class="tab-panel flex flex-col gap-6 max-w-4xl xl:max-w-5xl 2xl:max-w-6xl 3xl:max-w-7xl 4xl:max-w-[1800px] 5xl:max-w-[2200px] mx-auto w-full h-full">
                 
                 <!-- Barre de recherche (Sera masquée automatiquement pour les serveurs installés) -->
                 <div id="search-bar-container" class="bg-neutral-950/40 p-1.5 rounded-2xl border border-neutral-800/60 flex items-center gap-3 shadow-inner">
@@ -552,7 +562,7 @@
             </div>
 
             <!-- ================= ONGLET : PUBLIER UN SERVEUR ================= -->
-            <div id="tab-content-publier" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl mx-auto w-full">
+            <div id="tab-content-publier" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl 3xl:max-w-5xl 4xl:max-w-6xl 5xl:max-w-7xl mx-auto w-full">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
                     <h2 class="text-xl font-black text-white">Publier un serveur de jeu</h2>
@@ -716,7 +726,7 @@
             </div>
 
             <!-- ================= ONGLET : MODIFIER UN SERVEUR (CLONE EXACT DE PUBLIER) ================= -->
-            <div id="tab-content-modifier" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl mx-auto w-full animate-fade-in">
+            <div id="tab-content-modifier" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl 3xl:max-w-5xl 4xl:max-w-6xl 5xl:max-w-7xl mx-auto w-full animate-fade-in">
                 
                 <div class="flex items-center gap-3 pb-2 border-b border-neutral-800">
                     <button onclick="switchTab('mes-publications')" class="p-1 rounded bg-neutral-950/60 border border-neutral-800 hover:border-brand hover:text-brand transition-all cursor-pointer" title="Retour aux publications">
@@ -872,7 +882,7 @@
             </div>
 
             <!-- ================= ONGLET : MES PUBLICATIONS ================= -->
-            <div id="tab-content-mes-publications" class="tab-panel hidden flex-col gap-6 max-w-5xl 2xl:max-w-7xl mx-auto w-full">
+            <div id="tab-content-mes-publications" class="tab-panel hidden flex-col gap-6 max-w-5xl 2xl:max-w-7xl 3xl:max-w-[1600px] 4xl:max-w-[2000px] 5xl:max-w-[2400px] mx-auto w-full">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
                     <h2 class="text-xl font-black text-white">Mes serveurs publiés</h2>
@@ -886,7 +896,7 @@
             </div>
 
             <!-- ================= ONGLET : ADMINISTRATION ================= -->
-            <div id="tab-content-admin" class="tab-panel hidden flex-col gap-6 max-w-4xl 2xl:max-w-5xl mx-auto w-full">
+            <div id="tab-content-admin" class="tab-panel hidden flex-col gap-6 max-w-4xl 2xl:max-w-5xl 3xl:max-w-6xl 4xl:max-w-7xl 5xl:max-w-[1800px] mx-auto w-full">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
                     <h2 class="text-xl font-black text-white">Administration du Launcher (LAMI)</h2>
@@ -937,7 +947,7 @@
             </div>
 
             <!-- ================= ONGLET : SKINS ================= -->
-            <div id="tab-content-skins" class="tab-panel hidden flex-col gap-6 max-w-4xl xl:max-w-5xl 2xl:max-w-6xl mx-auto w-full animate-fade-in">
+            <div id="tab-content-skins" class="tab-panel hidden flex-col gap-6 max-w-4xl xl:max-w-5xl 2xl:max-w-6xl 3xl:max-w-7xl 4xl:max-w-[1700px] 5xl:max-w-[2000px] mx-auto w-full animate-fade-in">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
                     <h2 class="text-xl font-black text-white">Gestionnaire de Skins 3D</h2>
@@ -947,7 +957,7 @@
                 <div class="flex flex-col gap-6 items-stretch mt-2 w-full">
                     
                     <!-- Le visualiseur 3D de skin à trois personnages -->
-                    <div id="skin-drop-zone" class="bg-neutral-950/40 border border-neutral-800/80 rounded-3xl p-6 flex flex-col items-center justify-between relative min-h-[460px] overflow-hidden group">
+                    <div id="skin-drop-zone" class="bg-neutral-950/40 border border-neutral-800/80 rounded-3xl p-6 flex flex-col items-center justify-between relative min-h-[460px] 3xl:min-h-[560px] 4xl:min-h-[700px] overflow-hidden group">
                         
                         <!-- Overlay d'avertissement Drag-and-Drop -->
                         <div id="drop-overlay" class="absolute inset-0 bg-neutral-950/90 z-40 border-2 border-dashed border-brand flex flex-col items-center justify-center gap-3 transition-opacity duration-200 opacity-0 pointer-events-none">
@@ -958,7 +968,7 @@
                         </div>
 
                         <!-- Carrousel de visualisation (Conteneur Canvas Three.JS avec flèches au centre) -->
-                        <div class="w-full flex-1 relative flex items-center min-h-[350px]">
+                        <div class="w-full flex-1 relative flex items-center min-h-[350px] 3xl:min-h-[440px] 4xl:min-h-[560px]">
                             
                             <!-- Flèche gauche -->
                             <button onclick="cycleSkinSlot(-1)" class="absolute left-4 z-10 w-11 h-11 rounded-xl bg-neutral-900/90 border border-neutral-800 hover:bg-brand hover:border-brand hover:text-white flex items-center justify-center text-neutral-400 transition-all shadow-lg hover:scale-105 active:scale-95" title="Slot précédent">
@@ -966,7 +976,7 @@
                             </button>
 
                             <!-- Canvas inséré dynamiquement par JS -->
-                            <div id="canvas-3d-container" class="w-full h-[350px] min-h-[350px] cursor-grab active:cursor-grabbing relative"></div>
+                            <div id="canvas-3d-container" class="w-full h-[350px] min-h-[350px] 3xl:h-[440px] 3xl:min-h-[440px] 4xl:h-[560px] 4xl:min-h-[560px] cursor-grab active:cursor-grabbing relative"></div>
 
                             <!-- Flèche droite -->
                             <button onclick="cycleSkinSlot(1)" class="absolute right-4 z-10 w-11 h-11 rounded-xl bg-neutral-900/90 border border-neutral-800 hover:bg-brand hover:border-brand hover:text-white flex items-center justify-center text-neutral-400 transition-all shadow-lg hover:scale-105 active:scale-95" title="Slot suivant">
@@ -1005,7 +1015,7 @@
             </div>
 
             <!-- ================= ONGLET : RÉGLAGES ================= -->
-            <div id="tab-content-reglages" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl mx-auto w-full">
+            <div id="tab-content-reglages" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl 3xl:max-w-5xl 4xl:max-w-6xl 5xl:max-w-7xl mx-auto w-full">
                 
                 <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
                     <h2 class="text-xl font-black text-white">Paramètres du Launcher</h2>
@@ -1246,7 +1256,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.58.0";
+        const LAMI_VERSION = "0.59.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1344,16 +1354,18 @@
             },
             {
                 id: 2,
-                name: "Steve",
+                // Emplacements libres : affichent assets/default-skin.png tant
+                // qu'aucun skin n'y a été importé.
+                name: "Emplacement 2",
                 isActive: false,
-                empty: false,
+                empty: true,
                 colors: { head: 0xf5c69d, torso: 0x0099cc, arm: 0x0099cc, leg: 0x1a45a3, hair: 0x2e1d11 }
             },
             {
                 id: 3,
-                name: "Silhouette",
+                name: "Emplacement 3",
                 isActive: false,
-                empty: true, // Silhouette d'ombre par défaut
+                empty: true,
                 colors: { head: 0x1f2937, torso: 0x111827, arm: 0x111827, leg: 0x0f172a, hair: 0x020617 }
             }
         ];
@@ -2241,7 +2253,11 @@
 
         function loadMinecraftSkinTexture(username, callback) {
             const img = new Image();
-            img.crossOrigin = "anonymous";
+            // crossOrigin ne vaut QUE pour les URLs distantes : sur une page
+            // file://, le poser fait échouer le chargement des fichiers locaux
+            // (origine opaque) — c'est ce qui empêchait le skin par défaut de
+            // s'afficher. Les data: URL n'en ont pas besoin non plus.
+            if (/^https?:/.test(username)) img.crossOrigin = "anonymous";
             img.onload = function() {
                 const texture = new THREE.Texture(img);
                 texture.magFilter = THREE.NearestFilter;
