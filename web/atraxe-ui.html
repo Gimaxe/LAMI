@@ -974,12 +974,6 @@
                             </button>
                         </div>
 
-                        <!-- Nom du slot affiché au centre du carrousel -->
-                        <div class="flex items-center gap-2 pb-1">
-                            <span id="skin-slot-label" class="text-sm font-black text-white">—</span>
-                            <span id="skin-slot-badge" class="hidden text-[9px] font-bold uppercase tracking-wider text-brand-500/90 bg-brand/10 border border-brand/20 px-2 py-0.5 rounded">Mon compte</span>
-                        </div>
-
                     </div>
 
                     <!-- Barre d'actions épurée en bas -->
@@ -1257,7 +1251,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.56.0";
+        const LAMI_VERSION = "0.57.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -2067,7 +2061,9 @@
             scene3D.fog = new THREE.FogExp2(0x0a0a0a, 0.05);
 
             camera3D = new THREE.PerspectiveCamera(45, container.clientWidth / container.clientHeight, 0.1, 100);
-            camera3D.position.set(0, 0, 7.5);
+            // Recul + léger décalage vers le haut : le personnage entier tient dans
+            // le cadre (les pieds étaient coupés en bas).
+            camera3D.position.set(0, -0.35, 8.6);
 
             renderer3D = new THREE.WebGLRenderer({ antialias: true, alpha: true });
             renderer3D.setSize(container.clientWidth, container.clientHeight);
@@ -2080,17 +2076,18 @@
             raycaster = new THREE.Raycaster();
             mouse = new THREE.Vector2();
 
-            const ambientLight = new THREE.AmbientLight(0xffffff, 0.65);
+            // Éclairage NEUTRE : les couleurs du skin doivent rester fidèles
+            // (l'ancien projecteur cyan teintait tous les personnages en bleu).
+            const ambientLight = new THREE.AmbientLight(0xffffff, 0.95);
             scene3D.add(ambientLight);
 
-            const dirLight = new THREE.DirectionalLight(0xffffff, 0.95);
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.7);
             dirLight.position.set(5, 10, 7);
-            dirLight.castShadow = true;
             scene3D.add(dirLight);
 
-            const spotlight = new THREE.PointLight(0x06b6d4, 2.0, 12); 
-            spotlight.position.set(0, 0, 4);
-            scene3D.add(spotlight);
+            const fillLight = new THREE.DirectionalLight(0xffffff, 0.35);
+            fillLight.position.set(-5, 2, -6);   // déboucher le dos et les côtés
+            scene3D.add(fillLight);
 
             carouselGroup = new THREE.Group();
             scene3D.add(carouselGroup);
@@ -2382,6 +2379,35 @@
                 const rightLeg = new THREE.Mesh(rightLegGeo, skinMat);
                 rightLeg.position.set(0.38, -1.9, 0);
                 group.add(rightLeg);
+
+                // --- 2e COUCHE (overlay) : cheveux/casque, veste, manches, pantalon.
+                // Sans elle, la tête paraissait « fausse » alors que les icônes
+                // (api.mineatar.io/face) composent bien base + overlay.
+                // Le casque existe même en 64x32 ; les autres sont 64x64 seulement.
+                const overlayMat = new THREE.MeshStandardMaterial({
+                    map: skinData.texture,
+                    roughness: 0.85,
+                    metalness: 0.05,
+                    transparent: true,
+                    alphaTest: 0.1,   // écarte les pixels transparents de l'overlay
+                });
+                const addOverlay = (w, h, d, u, v, uw, uh, ud, pos, name) => {
+                    const geo = new THREE.BoxGeometry(w, h, d);
+                    setCubeUVs(geo, u, v, uw, uh, ud);
+                    const mesh = new THREE.Mesh(geo, overlayMat);
+                    mesh.position.set(pos[0], pos[1], pos[2]);
+                    if (name) mesh.name = name;
+                    group.add(mesh);
+                };
+                const G = 1.06;   // léger grossissement (la 2e couche enveloppe la 1re)
+                addOverlay(1.4 * G, 1.4 * G, 1.4 * G, 32, 0, 8, 8, 8, [0, 1.8, 0]);
+                if (isModern) {
+                    addOverlay(1.4 * G, 2.0 * G, 0.7 * G, 16, 32, 8, 12, 4, [0, 0.1, 0]);
+                    addOverlay(0.65 * G, 2.0 * G, 0.65 * G, 48, 48, 4, 12, 4, [-1.1, 0.1, 0], "leftArmOv");
+                    addOverlay(0.65 * G, 2.0 * G, 0.65 * G, 40, 32, 4, 12, 4, [1.1, 0.1, 0], "rightArmOv");
+                    addOverlay(0.65 * G, 2.0 * G, 0.65 * G, 0, 48, 4, 12, 4, [-0.38, -1.9, 0]);
+                    addOverlay(0.65 * G, 2.0 * G, 0.65 * G, 0, 32, 4, 12, 4, [0.38, -1.9, 0]);
+                }
             }
         }
 
@@ -2414,12 +2440,15 @@
                     modelGroup.position.y += Math.sin(elapsedTime * 2.0 + i) * 0.015;
                 } else {
                     modelGroup.position.y += Math.sin(elapsedTime * 1.2 + i) * 0.005;
-                    const leftArm = modelGroup.getObjectByName("leftArm");
-                    const rightArm = modelGroup.getObjectByName("rightArm");
-                    if (leftArm && rightArm) {
-                        leftArm.rotation.x = Math.sin(elapsedTime * 1.5) * 0.1;
-                        rightArm.rotation.x = -Math.sin(elapsedTime * 1.5) * 0.1;
-                    }
+                    // Base ET overlay (2e couche) des bras : même rotation, sinon
+                    // les manches se décalent du bras.
+                    const swing = Math.sin(elapsedTime * 1.5) * 0.1;
+                    ["leftArm", "leftArmOv"].forEach(function (n) {
+                        const o = modelGroup.getObjectByName(n); if (o) o.rotation.x = swing;
+                    });
+                    ["rightArm", "rightArmOv"].forEach(function (n) {
+                        const o = modelGroup.getObjectByName(n); if (o) o.rotation.x = -swing;
+                    });
                 }
             }
 
@@ -2431,12 +2460,6 @@
         function updateSkinInterface() {
             const activeSkin = skinCache[activeSlotIndex];
             if (!activeSkin) return;
-
-            // Nom du slot affiché + badge « Mon compte » sur le slot du compte.
-            const label = document.getElementById('skin-slot-label');
-            const badge = document.getElementById('skin-slot-badge');
-            if (label) label.innerText = activeSkin.empty ? 'Slot vide' : activeSkin.name;
-            if (badge) badge.classList.toggle('hidden', !activeSkin.isAccount);
 
             const btnEquip = document.getElementById('btn-equip-active-skin');
             if (activeSkin.empty) {
