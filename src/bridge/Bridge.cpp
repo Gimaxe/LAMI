@@ -117,6 +117,10 @@ void Bridge::handle(const QJsonObject &request)
         openInstanceFolder(id, params);
     } else if (method == "lookupName") {
         lookupName(id, params);
+    } else if (method == "refreshRole") {
+        // Re-demande le rôle courant au Worker (roles.json relu à cet instant).
+        if (!m_session.valid) { replyError(id, "Non connecté."); return; }
+        resolveRoleAndReply(id, m_session);
     } else if (method == "listInstanceFiles") {
         listInstanceFiles(id, params);
     } else if (method == "deleteInstanceFiles") {
@@ -1283,6 +1287,16 @@ void Bridge::postToWorker(int id, const QString &path, QJsonObject body)
             emit event(QJsonObject{{"event", "sessionExpired"}});
             replyError(id, o.value("error").toString(
                                "Session Microsoft expirée, reconnecte-toi."));
+            return;
+        }
+
+        // 403 = identité valide mais rôle insuffisant : le rôle a pu être révoqué
+        // depuis la connexion. L'écriture est déjà refusée côté Worker (rôle relu
+        // à chaque requête) ; on prévient l'UI pour qu'elle rafraîchisse ses
+        // onglets au lieu de continuer à afficher des boutons sans effet.
+        if (httpStatus == 403) {
+            emit event(QJsonObject{{"event", "roleChanged"}});
+            replyError(id, o.value("error").toString("Action refusée (rôle insuffisant)."));
             return;
         }
 

@@ -1103,8 +1103,8 @@
                             <div class="flex flex-col gap-1.5">
                                 <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Fermeture du Launcher</label>
                                 <select id="setting-onlaunch" class="bg-dark-input hover:bg-neutral-800 transition border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white outline-none focus:border-brand-500">
-                                    <option value="hide">Garder en arrière-plan (fenêtre masquée, revient à la fermeture du jeu)</option>
-                                    <option value="close">Fermer complètement le launcher</option>
+                                    <option value="hide">Garder en arrière-plan</option>
+                                    <option value="close">Fermer complètement</option>
                                 </select>
                             </div>
                         </div>
@@ -1251,7 +1251,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.54.0";
+        const LAMI_VERSION = "0.55.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1574,6 +1574,18 @@
                 });
                 lami.on('gameLog', function (m) {
                     appendGameLog(m.id, m.line);
+                });
+                // Le Worker a refusé une action pour rôle insuffisant : le rôle a
+                // pu être révoqué depuis la connexion. On redemande le rôle RÉEL
+                // et on remet les onglets à jour (l'écriture, elle, est déjà bloquée
+                // côté serveur — c'est purement pour ne pas afficher de faux droits).
+                lami.on('roleChanged', function () {
+                    lami.call('refreshRole').then(function (s) {
+                        if (s && s.role) {
+                            setDemoRole(s.role);
+                            showToast("Tes droits ont changé : rôle « " + s.role + " ».", "info");
+                        }
+                    }).catch(function () {});
                 });
                 lami.on('updateProgress', function (m) {
                     const bar = document.getElementById('update-progress-bar');
