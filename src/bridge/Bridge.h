@@ -70,6 +70,7 @@ private:
     void listSkins(int id);                                  // fichiers du dossier skins
     void importSkin(int id, const QJsonObject &params);      // ajoute un .png
     void deleteSkinFile(int id, const QJsonObject &params);
+    void saveAccountSkinToSlot(int id, const QJsonObject &params);
     void applySkin(int id, const QJsonObject &params);       // change le skin du compte
     void openSkinsFolder(int id);
     void listInstanceFiles(int id, const QJsonObject &params);

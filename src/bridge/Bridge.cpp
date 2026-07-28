@@ -1,5 +1,6 @@
 #include "bridge/Bridge.h"
 
+#include <QCryptographicHash>
 #include <QDateTime>
 #include <QDir>
 #include <QFile>
@@ -126,6 +127,8 @@ void Bridge::handle(const QJsonObject &request)
         importSkin(id, params);
     } else if (method == "deleteSkinFile") {
         deleteSkinFile(id, params);
+    } else if (method == "saveAccountSkinToSlot") {
+        saveAccountSkinToSlot(id, params);
     } else if (method == "applySkin") {
         applySkin(id, params);
     } else if (method == "openSkinsFolder") {
@@ -574,23 +577,31 @@ void Bridge::getAccountSkin(int id)
         }
         if (url.isEmpty()) { replyOk(id, QJsonObject{{"url", ""}, {"variant", "CLASSIC"}}); return; }
 
-        // Sauvegarde de l'original dans le SLOT 1 (une seule fois, jamais écrasé).
+        // On télécharge TOUJOURS le skin actif : son empreinte permet à l'UI de
+        // repérer quel emplacement de la bibliothèque est actuellement porté
+        // (même si le changement vient d'un autre launcher). La sauvegarde
+        // skin-1.png, elle, n'est écrite qu'une fois et jamais écrasée.
         const QString backup = QDir(skinsDir()).filePath("skin-1.png");
-        if (QFileInfo::exists(backup)) {
-            replyOk(id, QJsonObject{{"url", url}, {"variant", variant}, {"backup", backup}});
-            return;
-        }
+        const bool needBackup = !QFileInfo::exists(backup);
         QNetworkRequest dreq{QUrl(url)};
         dreq.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
         QNetworkReply *dl = m_net->get(dreq);
-        connect(dl, &QNetworkReply::finished, this, [this, id, dl, url, variant, backup]() {
+        connect(dl, &QNetworkReply::finished, this, [this, id, dl, url, variant, backup, needBackup]() {
             dl->deleteLater();
-            QString saved;
+            QString hash, saved;
             if (dl->error() == QNetworkReply::NoError) {
-                QFile f(backup);
-                if (f.open(QIODevice::WriteOnly)) { f.write(dl->readAll()); saved = backup; }
+                const QByteArray png = dl->readAll();
+                hash = QString::fromLatin1(
+                    QCryptographicHash::hash(png, QCryptographicHash::Sha256).toHex());
+                if (needBackup) {
+                    QFile f(backup);
+                    if (f.open(QIODevice::WriteOnly)) { f.write(png); saved = backup; }
+                } else {
+                    saved = backup;
+                }
             }
-            replyOk(id, QJsonObject{{"url", url}, {"variant", variant}, {"backup", saved}});
+            replyOk(id, QJsonObject{{"url", url}, {"variant", variant},
+                                    {"sha256", hash}, {"backup", saved}});
         });
     });
 }
@@ -606,11 +617,17 @@ void Bridge::listSkins(int id)
         const int slot = QStringView{fi.baseName()}.mid(5).toInt();   // "skin-N"
         if (slot <= 0) continue;
         QFile f(fi.absoluteFilePath());
-        QString b64;
-        if (f.open(QIODevice::ReadOnly))
-            b64 = QString::fromLatin1(f.readAll().toBase64());
+        QString b64, sha;
+        if (f.open(QIODevice::ReadOnly)) {
+            const QByteArray png = f.readAll();
+            b64 = QString::fromLatin1(png.toBase64());
+            // Empreinte : sert à repérer quel emplacement est porté par le compte.
+            sha = QString::fromLatin1(
+                QCryptographicHash::hash(png, QCryptographicHash::Sha256).toHex());
+        }
         arr.append(QJsonObject{{"file", fi.fileName()}, {"slot", slot},
-                               {"size", double(fi.size())}, {"base64", b64}});
+                               {"size", double(fi.size())}, {"base64", b64},
+                               {"sha256", sha}});
     }
     replyOk(id, QJsonObject{{"skins", arr}, {"folder", skinsDir()}});
 }
@@ -632,6 +649,33 @@ void Bridge::importSkin(int id, const QJsonObject &params)
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { replyError(id, "Écriture impossible."); return; }
     f.write(png);
     replyOk(id, QJsonObject{{"file", name}, {"slot", slot}, {"path", dest}});
+}
+
+// Télécharge le skin ACTUEL du compte dans un emplacement de la bibliothèque
+// (utile quand il a été changé depuis un autre launcher / le site Minecraft).
+void Bridge::saveAccountSkinToSlot(int id, const QJsonObject &params)
+{
+    const int slot = params.value("slot").toInt(0);
+    const QString url = params.value("url").toString();
+    if (slot <= 1) { replyError(id, "Slot invalide (1 est réservé au skin d'origine)."); return; }
+    if (url.isEmpty()) { replyError(id, "URL du skin manquante."); return; }
+    QNetworkRequest req{QUrl(url)};
+    req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
+    QNetworkReply *reply = m_net->get(req);
+    connect(reply, &QNetworkReply::finished, this, [this, id, reply, slot]() {
+        reply->deleteLater();
+        const QByteArray png = reply->readAll();
+        if (reply->error() != QNetworkReply::NoError || !png.startsWith("\x89PNG")) {
+            replyError(id, "Téléchargement du skin impossible.");
+            return;
+        }
+        const QString name = QStringLiteral("skin-%1.png").arg(slot);
+        QFile f(QDir(skinsDir()).filePath(name));
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { replyError(id, "Écriture impossible."); return; }
+        f.write(png);
+        replyOk(id, QJsonObject{{"file", name}, {"slot", slot},
+                                {"base64", QString::fromLatin1(png.toBase64())}});
+    });
 }
 
 void Bridge::deleteSkinFile(int id, const QJsonObject &params)

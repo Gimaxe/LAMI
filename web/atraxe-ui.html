@@ -986,6 +986,15 @@
 
                     </div>
 
+                    <!-- Bandeau : skin du compte absent de la bibliothèque -->
+                    <div id="skin-external-notice" class="hidden flex items-center justify-between gap-3 bg-neutral-950/60 border border-brand/20 rounded-2xl px-4 py-3">
+                        <div class="flex items-center gap-2 min-w-0">
+                            <i data-lucide="info" class="w-4 h-4 text-brand-500 flex-shrink-0"></i>
+                            <span class="text-xs text-neutral-300 truncate">Le skin de ton compte n'est dans aucun emplacement.</span>
+                        </div>
+                        <button onclick="saveExternalSkin()" class="text-xs font-bold text-brand-500 hover:text-brand-400 whitespace-nowrap cursor-pointer">L'enregistrer</button>
+                    </div>
+
                     <!-- Barre d'actions : import (petit) · appliquer (grand) · dossier (petit) -->
                     <div class="flex items-stretch gap-3 w-full">
 
@@ -1164,6 +1173,29 @@
     </main>
 
     <!-- ÉCRAN DE CONNEXION (bloque l'app tant qu'on n'est pas connecté) -->
+    <!-- Modale : le skin du compte n'est dans aucun emplacement (changé depuis
+         un autre launcher / le site Minecraft) -> choix de l'emplacement -->
+    <div id="skin-import-modal" class="hidden fixed inset-0 z-[120] flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
+        <div class="bg-dark-card border border-neutral-800 rounded-3xl p-8 max-w-lg w-full mx-4 flex flex-col gap-6 shadow-2xl animate-fade-in">
+            <div class="flex items-start gap-4">
+                <div class="w-12 h-12 rounded-2xl bg-brand/10 border border-brand/20 flex items-center justify-center flex-shrink-0">
+                    <i data-lucide="download" class="w-6 h-6 text-brand-500"></i>
+                </div>
+                <div class="min-w-0">
+                    <h2 class="text-lg font-black text-white">Skin du compte introuvable</h2>
+                    <p class="text-sm text-neutral-400 mt-1.5 leading-relaxed">
+                        Le skin porté par ton compte Minecraft ne correspond à aucun de tes emplacements
+                        (il a sans doute été changé ailleurs). Veux-tu l'enregistrer&nbsp;? Choisis l'emplacement à remplacer.
+                    </p>
+                </div>
+            </div>
+            <div id="skin-import-slots" class="grid grid-cols-3 gap-3"><!-- rempli en JS --></div>
+            <div class="flex justify-end">
+                <button onclick="hideSkinImportModal()" class="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-300 font-bold rounded-xl text-sm transition-all cursor-pointer">Plus tard</button>
+            </div>
+        </div>
+    </div>
+
     <!-- Modale de confirmation générique (remplace confirm() natif) -->
     <div id="confirm-modal" class="hidden fixed inset-0 z-[120] flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
         <div class="bg-dark-card border border-neutral-800 rounded-3xl p-8 max-w-md w-full mx-4 flex flex-col gap-6 shadow-2xl animate-fade-in">
@@ -1256,7 +1288,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.60.0";
+        const LAMI_VERSION = "0.61.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1973,6 +2005,8 @@
             if (window.lami && window.lami.connected) {
                 lami.call('getAccountSkin').then(function (r) {
                     if (r && r.variant) slot.variant = (r.variant || 'CLASSIC').toLowerCase();
+                    accountSkinSha = (r && r.sha256) || '';
+                    accountSkinUrl = (r && r.url) || '';
                     restoreSkinSlots();
                 }).catch(function () {});
             }
@@ -2515,23 +2549,78 @@
             if (!activeSkin) return;
 
             const btnEquip = document.getElementById('btn-equip-active-skin');
+            const base = "flex-1 py-4 font-extrabold rounded-2xl text-xs tracking-wider uppercase transition-all flex items-center justify-center gap-2";
             if (activeSkin.empty) {
                 btnEquip.disabled = true;
-                btnEquip.className = "py-4 bg-neutral-800 text-neutral-600 font-extrabold rounded-2xl text-xs tracking-wider uppercase cursor-not-allowed flex items-center justify-center gap-2 w-full";
-                btnEquip.innerHTML = `<i data-lucide="slash" class="w-4.5 h-4.5"></i><span>Slot Vide</span>`;
+                btnEquip.className = base + " bg-neutral-800 text-neutral-600 cursor-not-allowed";
+                btnEquip.innerHTML = `<i data-lucide="slash" class="w-4.5 h-4.5"></i><span>Emplacement vide</span>`;
+            } else if (activeSkin.isActive) {
+                btnEquip.disabled = true;
+                btnEquip.className = base + " bg-brand/10 border border-brand/20 text-brand-500 cursor-default";
+                btnEquip.innerHTML = `<i data-lucide="check" class="w-4.5 h-4.5"></i><span>Skin actuel du compte</span>`;
             } else {
-                if (activeSkin.isActive) {
-                    btnEquip.disabled = true;
-                    btnEquip.className = "py-4 bg-brand/10 border border-brand/20 text-brand-500 font-extrabold rounded-2xl text-xs tracking-wider uppercase cursor-default flex items-center justify-center gap-2 w-full";
-                    btnEquip.innerHTML = `<i data-lucide="check" class="w-4.5 h-4.5"></i><span>Skin Actif</span>`;
-                } else {
-                    btnEquip.disabled = false;
-                    btnEquip.className = "py-4 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-extrabold rounded-2xl text-xs tracking-wider uppercase transition-all shadow-lg shadow-brand/10 flex items-center justify-center gap-2 w-full";
-                    btnEquip.innerHTML = `<i data-lucide="check-circle" class="w-4.5 h-4.5"></i><span>Équiper ce skin</span>`;
-                }
+                btnEquip.disabled = false;
+                btnEquip.className = base + " bg-brand hover:bg-brand-600 active:bg-brand-700 text-white shadow-lg shadow-brand/10";
+                btnEquip.innerHTML = `<i data-lucide="check-circle" class="w-4.5 h-4.5"></i><span>Utiliser ce skin</span>`;
+            }
+
+            // Bandeau : le skin du compte ne vient d'aucun emplacement (changé
+            // ailleurs) → proposition de l'ajouter à la bibliothèque.
+            const notice = document.getElementById('skin-external-notice');
+            if (notice) {
+                const known = skinCache.some(s => s.isActive);
+                notice.classList.toggle('hidden', known || !accountSkinSha);
             }
             lucide.createIcons();
         }
+
+        // Propose d'enregistrer le skin du compte quand il ne correspond à aucun
+        // emplacement (changé depuis un autre launcher / le site Minecraft).
+        // L'utilisateur choisit LUI-MÊME l'emplacement à remplacer.
+        let externalSkinPrompted = false;
+
+        function showSkinImportModal() {
+            if (!accountSkinUrl) return;
+            const grid = document.getElementById('skin-import-slots');
+            grid.innerHTML = '';
+            skinCache.forEach(function (slot, i) {
+                const n = i + 1;
+                const locked = (n === 1);   // emplacement 1 = sauvegarde d'origine
+                const btn = document.createElement('button');
+                btn.disabled = locked;
+                btn.className = locked
+                    ? "flex flex-col items-center gap-1 p-3 rounded-2xl border border-neutral-800 bg-neutral-900/40 text-neutral-600 cursor-not-allowed"
+                    : "flex flex-col items-center gap-1 p-3 rounded-2xl border border-neutral-800 bg-neutral-900 hover:bg-neutral-850 hover:border-brand/40 text-neutral-200 transition-all cursor-pointer";
+                btn.innerHTML = `
+                    <span class="text-sm font-black">Emplacement ${n}</span>
+                    <span class="text-[10px] text-neutral-500 text-center leading-tight">${
+                        locked ? "Skin d'origine<br>(protégé)"
+                               : (slot.empty ? 'Libre' : 'Sera remplacé')}</span>`;
+                if (!locked) btn.onclick = function () { saveExternalSkinToSlot(i); };
+                grid.appendChild(btn);
+            });
+            document.getElementById('skin-import-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        function hideSkinImportModal() {
+            document.getElementById('skin-import-modal').classList.add('hidden');
+        }
+
+        function saveExternalSkinToSlot(index) {
+            hideSkinImportModal();
+            lami.call('saveAccountSkinToSlot', { slot: index + 1, url: accountSkinUrl })
+                .then(function (r) {
+                    applySkinToSlot(index, r.file, r.base64);
+                    skinCache[index].sha256 = accountSkinSha;
+                    markActiveSkinSlot();
+                    showToast(`Skin du compte enregistré dans l'emplacement ${index + 1}.`, "success");
+                })
+                .catch(function (err) { showToast("Enregistrement échoué : " + (err.message || err), "error"); });
+        }
+
+        // Bandeau discret (toujours disponible) pour rouvrir la proposition.
+        function saveExternalSkin() { showSkinImportModal(); }
 
         function cycleSkinSlot(direction) {
             activeSlotIndex += direction;
@@ -2561,13 +2650,19 @@
 
             lami.call('applySkin', { file: activeSkin.fileName, variant: activeSkin.variant || 'classic' }, 120000)
                 .then(function () {
-                    skinCache.forEach(s => s.isActive = false);
-                    activeSkin.isActive = true;
+                    // La bibliothèque ne bouge pas : seul l'indicateur « actif »
+                    // se déplace sur l'emplacement qu'on vient d'appliquer.
+                    accountSkinSha = activeSkin.sha256 || '';
+                    markActiveSkinSlot();
+                    if (!accountSkinSha) {   // empreinte inconnue : on la relit
+                        lami.call('getAccountSkin').then(function (r) {
+                            accountSkinSha = (r && r.sha256) || '';
+                            accountSkinUrl = (r && r.url) || '';
+                            markActiveSkinSlot();
+                        }).catch(function () {});
+                    }
                     showToast("Skin appliqué à ton compte Minecraft !", "success");
-                    // Le slot « compte » et l'avatar reflètent le nouveau skin
-                    // (paramètre anti-cache pour forcer le rechargement).
                     refreshAccountSkinTexture();
-                    updateSkinInterface();
                 })
                 .catch(function (err) {
                     showToast("Changement refusé : " + (err.message || err), "error");
@@ -2637,6 +2732,31 @@
             updateSkinInterface();
         }
 
+        // Empreinte du skin actuellement porté par le compte (renseignée par
+        // getAccountSkin). Sert à savoir QUEL emplacement est actif, sans jamais
+        // réorganiser la bibliothèque.
+        let accountSkinSha = '';
+        let accountSkinUrl = '';
+
+        // Marque comme « actif » l'emplacement dont le contenu correspond au skin
+        // du compte. Si aucun ne correspond (skin changé depuis un autre launcher
+        // ou le site Minecraft), aucun emplacement n'est actif.
+        function markActiveSkinSlot() {
+            let found = false;
+            skinCache.forEach(function (s) {
+                s.isActive = !!(accountSkinSha && s.sha256 && s.sha256 === accountSkinSha);
+                if (s.isActive) found = true;
+            });
+            updateSkinInterface();
+            // Skin porté introuvable dans la bibliothèque : on le propose une fois
+            // par session (le bandeau permet de rouvrir la fenêtre ensuite).
+            if (!found && accountSkinSha && accountSkinUrl && !externalSkinPrompted) {
+                externalSkinPrompted = true;
+                showSkinImportModal();
+            }
+            return found;
+        }
+
         // Restaure les emplacements depuis les fichiers skin-N.png du dossier des
         // skins : un skin importé reste en place après redémarrage du launcher.
         function restoreSkinSlots() {
@@ -2647,6 +2767,7 @@
                     if (index < 0 || index >= skinCache.length) return;
                     if (!s.base64) return;
                     applySkinToSlot(index, s.file, s.base64);
+                    skinCache[index].sha256 = s.sha256 || '';
                     // Le slot 1 conserve son identité « skin d'origine » : on peut
                     // y revenir après avoir essayé un autre skin.
                     if (index === 0) {
@@ -2654,6 +2775,7 @@
                         skinCache[0].name = "Skin d'origine";
                     }
                 });
+                markActiveSkinSlot();
             }).catch(function () {});
         }
 
