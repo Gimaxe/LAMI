@@ -588,11 +588,12 @@ void Bridge::getAccountSkin(int id)
         QNetworkReply *dl = m_net->get(dreq);
         connect(dl, &QNetworkReply::finished, this, [this, id, dl, url, variant, backup, needBackup]() {
             dl->deleteLater();
-            QString hash, saved;
+            QString hash, saved, b64;
             if (dl->error() == QNetworkReply::NoError) {
                 const QByteArray png = dl->readAll();
                 hash = QString::fromLatin1(
                     QCryptographicHash::hash(png, QCryptographicHash::Sha256).toHex());
+                b64 = QString::fromLatin1(png.toBase64());   // aperçu côté UI
                 if (needBackup) {
                     QFile f(backup);
                     if (f.open(QIODevice::WriteOnly)) { f.write(png); saved = backup; }
@@ -601,7 +602,7 @@ void Bridge::getAccountSkin(int id)
                 }
             }
             replyOk(id, QJsonObject{{"url", url}, {"variant", variant},
-                                    {"sha256", hash}, {"backup", saved}});
+                                    {"sha256", hash}, {"backup", saved}, {"base64", b64}});
         });
     });
 }

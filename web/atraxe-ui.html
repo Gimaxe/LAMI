@@ -1177,22 +1177,51 @@
          un autre launcher / le site Minecraft) -> choix de l'emplacement -->
     <div id="skin-import-modal" class="hidden fixed inset-0 z-[120] flex items-center justify-center bg-neutral-950/80 backdrop-blur-sm">
         <div class="bg-dark-card border border-neutral-800 rounded-3xl p-8 max-w-lg w-full mx-4 flex flex-col gap-6 shadow-2xl animate-fade-in">
-            <div class="flex items-start gap-4">
-                <div class="w-12 h-12 rounded-2xl bg-brand/10 border border-brand/20 flex items-center justify-center flex-shrink-0">
-                    <i data-lucide="download" class="w-6 h-6 text-brand-500"></i>
+
+            <!-- Étape 1 : veut-on récupérer ce skin ? (avec aperçu) -->
+            <div id="skin-import-step1" class="flex flex-col gap-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-2xl bg-brand/10 border border-brand/20 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="download" class="w-6 h-6 text-brand-500"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-black text-white">Nouveau skin détecté</h2>
+                        <p class="text-sm text-neutral-400 mt-1.5 leading-relaxed">
+                            Le skin porté par ton compte Minecraft n'est dans aucun de tes emplacements.
+                            Veux-tu l'enregistrer dans ta bibliothèque&nbsp;?
+                        </p>
+                    </div>
                 </div>
-                <div class="min-w-0">
-                    <h2 class="text-lg font-black text-white">Skin du compte introuvable</h2>
-                    <p class="text-sm text-neutral-400 mt-1.5 leading-relaxed">
-                        Le skin porté par ton compte Minecraft ne correspond à aucun de tes emplacements
-                        (il a sans doute été changé ailleurs). Veux-tu l'enregistrer&nbsp;? Choisis l'emplacement à remplacer.
-                    </p>
+                <div class="flex justify-center">
+                    <canvas id="skin-import-preview" width="64" height="64"
+                            class="w-28 h-28 rounded-2xl border border-neutral-800 bg-neutral-950"
+                            style="image-rendering: pixelated;"></canvas>
+                </div>
+                <div class="flex gap-3 justify-end">
+                    <button onclick="hideSkinImportModal()" class="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-300 font-bold rounded-xl text-sm transition-all cursor-pointer">Non</button>
+                    <button onclick="skinImportGoToStep2()" class="px-5 py-2.5 bg-brand hover:bg-brand-600 active:bg-brand-700 text-white font-bold rounded-xl text-sm transition-all shadow-lg shadow-brand/20 cursor-pointer">Oui, l'enregistrer</button>
                 </div>
             </div>
-            <div id="skin-import-slots" class="grid grid-cols-3 gap-3"><!-- rempli en JS --></div>
-            <div class="flex justify-end">
-                <button onclick="hideSkinImportModal()" class="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-300 font-bold rounded-xl text-sm transition-all cursor-pointer">Plus tard</button>
+
+            <!-- Étape 2 : quel emplacement remplacer ? (aperçu de chacun) -->
+            <div id="skin-import-step2" class="hidden flex-col gap-6">
+                <div class="flex items-start gap-4">
+                    <div class="w-12 h-12 rounded-2xl bg-brand/10 border border-brand/20 flex items-center justify-center flex-shrink-0">
+                        <i data-lucide="layout-grid" class="w-6 h-6 text-brand-500"></i>
+                    </div>
+                    <div class="min-w-0">
+                        <h2 class="text-lg font-black text-white">Quel emplacement remplacer&nbsp;?</h2>
+                        <p class="text-sm text-neutral-400 mt-1.5 leading-relaxed">
+                            Choisis où enregistrer le skin. L'emplacement 1 conserve ton skin d'origine.
+                        </p>
+                    </div>
+                </div>
+                <div id="skin-import-slots" class="grid grid-cols-3 gap-3"><!-- rempli en JS --></div>
+                <div class="flex justify-end">
+                    <button onclick="hideSkinImportModal()" class="px-5 py-2.5 bg-neutral-900 hover:bg-neutral-800 border border-neutral-800 hover:border-neutral-700 text-neutral-300 font-bold rounded-xl text-sm transition-all cursor-pointer">Annuler</button>
+                </div>
             </div>
+
         </div>
     </div>
 
@@ -1288,7 +1317,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.61.0";
+        const LAMI_VERSION = "0.62.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -2007,6 +2036,7 @@
                     if (r && r.variant) slot.variant = (r.variant || 'CLASSIC').toLowerCase();
                     accountSkinSha = (r && r.sha256) || '';
                     accountSkinUrl = (r && r.url) || '';
+                    accountSkinDataUrl = (r && r.base64) ? 'data:image/png;base64,' + r.base64 : '';
                     restoreSkinSlots();
                 }).catch(function () {});
             }
@@ -2579,8 +2609,43 @@
         // L'utilisateur choisit LUI-MÊME l'emplacement à remplacer.
         let externalSkinPrompted = false;
 
+        // Dessine le VISAGE d'un skin (base + calque chapeau) dans un canvas :
+        // un aperçu reconnaissable en un coup d'œil, contrairement à la texture
+        // brute 64x64 qui est illisible.
+        function drawSkinFace(canvas, dataUrl) {
+            if (!canvas || !dataUrl) return;
+            const ctx = canvas.getContext('2d');
+            const img = new Image();
+            img.onload = function () {
+                ctx.imageSmoothingEnabled = false;
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(img, 8, 8, 8, 8, 0, 0, canvas.width, canvas.height);      // visage
+                ctx.drawImage(img, 40, 8, 8, 8, 0, 0, canvas.width, canvas.height);     // calque
+            };
+            img.onerror = function () { ctx.clearRect(0, 0, canvas.width, canvas.height); };
+            img.src = dataUrl;
+        }
+
         function showSkinImportModal() {
-            if (!accountSkinUrl) return;
+            if (!accountSkinUrl && !accountSkinDataUrl) return;
+            // Étape 1 : aperçu du skin détecté + oui/non.
+            document.getElementById('skin-import-step1').classList.remove('hidden');
+            document.getElementById('skin-import-step1').classList.add('flex');
+            document.getElementById('skin-import-step2').classList.add('hidden');
+            document.getElementById('skin-import-step2').classList.remove('flex');
+            drawSkinFace(document.getElementById('skin-import-preview'), accountSkinDataUrl);
+            document.getElementById('skin-import-modal').classList.remove('hidden');
+            lucide.createIcons();
+        }
+
+        // Étape 2 : choix de l'emplacement, avec l'aperçu de ce qu'il contient.
+        function skinImportGoToStep2() {
+            document.getElementById('skin-import-step1').classList.add('hidden');
+            document.getElementById('skin-import-step1').classList.remove('flex');
+            const step2 = document.getElementById('skin-import-step2');
+            step2.classList.remove('hidden');
+            step2.classList.add('flex');
+
             const grid = document.getElementById('skin-import-slots');
             grid.innerHTML = '';
             skinCache.forEach(function (slot, i) {
@@ -2589,20 +2654,26 @@
                 const btn = document.createElement('button');
                 btn.disabled = locked;
                 btn.className = locked
-                    ? "flex flex-col items-center gap-1 p-3 rounded-2xl border border-neutral-800 bg-neutral-900/40 text-neutral-600 cursor-not-allowed"
-                    : "flex flex-col items-center gap-1 p-3 rounded-2xl border border-neutral-800 bg-neutral-900 hover:bg-neutral-850 hover:border-brand/40 text-neutral-200 transition-all cursor-pointer";
+                    ? "flex flex-col items-center gap-2 p-3 rounded-2xl border border-neutral-800 bg-neutral-900/40 text-neutral-600 cursor-not-allowed"
+                    : "flex flex-col items-center gap-2 p-3 rounded-2xl border border-neutral-800 bg-neutral-900 hover:bg-neutral-850 hover:border-brand/50 text-neutral-200 transition-all cursor-pointer";
+                const canvasId = 'skin-slot-preview-' + i;
                 btn.innerHTML = `
-                    <span class="text-sm font-black">Emplacement ${n}</span>
+                    <canvas id="${canvasId}" width="64" height="64"
+                            class="w-14 h-14 rounded-xl border border-neutral-800 bg-neutral-950"
+                            style="image-rendering: pixelated;"></canvas>
+                    <span class="text-xs font-black">Emplacement ${n}</span>
                     <span class="text-[10px] text-neutral-500 text-center leading-tight">${
                         locked ? "Skin d'origine<br>(protégé)"
                                : (slot.empty ? 'Libre' : 'Sera remplacé')}</span>`;
                 if (!locked) btn.onclick = function () { saveExternalSkinToSlot(i); };
                 grid.appendChild(btn);
+                if (slot.dataUrl) drawSkinFace(document.getElementById(canvasId), slot.dataUrl);
             });
-            document.getElementById('skin-import-modal').classList.remove('hidden');
             lucide.createIcons();
         }
 
+        // « Non » : on ne mémorise rien — la proposition revient au prochain
+        // démarrage du launcher (et le bandeau permet de la rouvrir avant).
         function hideSkinImportModal() {
             document.getElementById('skin-import-modal').classList.add('hidden');
         }
@@ -2737,6 +2808,7 @@
         // réorganiser la bibliothèque.
         let accountSkinSha = '';
         let accountSkinUrl = '';
+        let accountSkinDataUrl = '';   // aperçu du skin porté (fenêtre de proposition)
 
         // Marque comme « actif » l'emplacement dont le contenu correspond au skin
         // du compte. Si aucun ne correspond (skin changé depuis un autre launcher
