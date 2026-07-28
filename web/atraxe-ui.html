@@ -53,6 +53,32 @@
         body {
             font-family: 'Plus Jakarta Sans', sans-serif;
         }
+        /* Cases à cocher custom (panneau des fichiers d'instance) : intégrées au
+           style du launcher — carré arrondi sombre, coche dessinée en CSS,
+           accent de la couleur du thème quand cochée. */
+        .lami-check {
+            appearance: none; -webkit-appearance: none;
+            width: 1.05rem; height: 1.05rem; flex-shrink: 0;
+            border: 1.5px solid rgb(64 64 64 / .9);
+            border-radius: 0.4rem;
+            background: rgb(10 10 10 / .8);
+            cursor: pointer;
+            display: inline-grid; place-content: center;
+            transition: border-color .15s ease, background .15s ease, box-shadow .15s ease;
+        }
+        .lami-check:hover { border-color: rgb(var(--brand-500) / .6); }
+        .lami-check::before {
+            content: ""; width: 0.55rem; height: 0.55rem;
+            transform: scale(0); transition: transform .12s ease-in-out;
+            clip-path: polygon(14% 44%, 0 65%, 50% 100%, 100% 16%, 80% 0%, 43% 62%);
+            background: white;
+        }
+        .lami-check:checked {
+            background: rgb(var(--brand-500));
+            border-color: rgb(var(--brand-500));
+            box-shadow: 0 0 10px rgb(var(--brand-500) / .35);
+        }
+        .lami-check:checked::before { transform: scale(1); }
         /* Fond d'écran optionnel de la zone principale (droite). */
         #main-content { position: relative; }
         #main-bg {
@@ -1253,7 +1279,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.48.0";
+        const LAMI_VERSION = "0.49.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -2838,21 +2864,21 @@
                 // item : { file, rel, managed } (réel) ou une simple chaîne (démo).
                 const file = typeof item === 'string' ? item : item.file;
                 const rel = typeof item === 'string' ? '' : item.rel;
-                const badge = (typeof item === 'string') ? ''
+                // Icône de provenance : nuage (fichier du serveur, synchronisé) ou
+                // silhouette (fichier perso, jamais touché par la synchro).
+                const origin = (typeof item === 'string')
+                    ? `<i data-lucide="${asset.icon}" class="w-3.5 h-3.5 text-neutral-600"></i>`
                     : item.managed
-                        ? '<span class="text-[9px] font-bold uppercase tracking-wider text-brand-500/80 bg-brand/10 border border-brand/20 px-1.5 py-0.5 rounded flex-shrink-0">Serveur</span>'
-                        : '<span class="text-[9px] font-bold uppercase tracking-wider text-amber-400/80 bg-amber-950/30 border border-amber-500/20 px-1.5 py-0.5 rounded flex-shrink-0">Perso</span>';
+                        ? '<span title="Fichier du serveur — synchronisé automatiquement" class="flex items-center"><i data-lucide="cloud" class="w-3.5 h-3.5 text-brand-500/80"></i></span>'
+                        : '<span title="Fichier perso — jamais supprimé par la synchro" class="flex items-center"><i data-lucide="user" class="w-3.5 h-3.5 text-amber-400/80"></i></span>';
                 const div = document.createElement('div');
                 div.className = "flex items-center justify-between p-3 rounded-xl border border-neutral-800/40 bg-neutral-950/40 hover:bg-neutral-950/70 hover:border-brand-500/20 transition duration-150 cursor-pointer text-xs text-neutral-300 select-none group";
                 div.innerHTML = `
                     <label class="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
-                        <input type="checkbox" id="${asset.key}-${idx}" data-item-name="${file}" data-item-rel="${rel}" class="${asset.key}-checkbox rounded-md border-neutral-800 text-brand focus:ring-brand-500/20 bg-neutral-950 w-4.5 h-4.5 cursor-pointer accent-brand-500">
+                        <input type="checkbox" id="${asset.key}-${idx}" data-item-name="${file}" data-item-rel="${rel}" class="${asset.key}-checkbox lami-check">
                         <span class="truncate font-semibold text-neutral-300 group-hover:text-white transition-colors">${file}</span>
                     </label>
-                    <div class="flex items-center gap-2 ml-2 flex-shrink-0">
-                        ${badge}
-                        <i data-lucide="${asset.icon}" class="w-3.5 h-3.5 text-neutral-600 group-hover:text-brand-500 transition-colors"></i>
-                    </div>
+                    <div class="flex items-center gap-2 ml-2 flex-shrink-0">${origin}</div>
                 `;
                 listContainer.appendChild(div);
             });
