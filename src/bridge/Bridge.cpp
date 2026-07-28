@@ -113,6 +113,12 @@ void Bridge::handle(const QJsonObject &request)
         uninstall(id, params);
     } else if (method == "openInstanceFolder") {
         openInstanceFolder(id, params);
+    } else if (method == "listInstanceFiles") {
+        listInstanceFiles(id, params);
+    } else if (method == "deleteInstanceFiles") {
+        deleteInstanceFiles(id, params);
+    } else if (method == "addInstanceFiles") {
+        addInstanceFiles(id, params);
     } else if (method == "listBackgrounds") {
         listBackgrounds(id);
     } else if (method == "getSettings") {
@@ -383,6 +389,103 @@ void Bridge::openUrl(int id, const QJsonObject &params)
 }
 
 // Désinstalle un serveur : supprime son instance locale.
+namespace {
+// Catégories d'assets d'une instance : clé d'API → dossier réellement lu par le
+// jeu (les shaders vont dans « shaderpacks/ », voir assetLocalPath).
+struct AssetDir { const char *key; const char *dir; };
+constexpr AssetDir kAssetDirs[] = {
+    {"mods", "mods"}, {"plugins", "plugins"},
+    {"resourcepacks", "resourcepacks"}, {"shaders", "shaderpacks"},
+};
+// Un chemin relatif d'asset est-il sûr et dans un dossier autorisé ?
+bool safeAssetRel(const QString &rel)
+{
+    if (rel.isEmpty() || rel.contains("..") || rel.startsWith('/')) return false;
+    for (const AssetDir &c : kAssetDirs)
+        if (rel.startsWith(QString(c.dir) + "/")) return true;
+    return false;
+}
+} // namespace
+
+// Liste les fichiers RÉELLEMENT présents sur le disque de l'instance, par
+// catégorie, avec leur statut : managed=true (installé par le launcher depuis
+// le manifeste) ou false (ajouté manuellement par le joueur — intouchable).
+void Bridge::listInstanceFiles(int id, const QJsonObject &params)
+{
+    const QString sid = params.value("id").toString();
+    if (sid.isEmpty()) { replyError(id, "Identifiant manquant."); return; }
+    const QString base = QDir(config::dataRoot()).filePath("instances/" + sid);
+    SyncManager sync(base);
+    const QStringList managed = sync.loadInstalled();
+
+    QJsonObject out;
+    for (const AssetDir &c : kAssetDirs) {
+        QJsonArray arr;
+        const QDir d(QDir(base).filePath(c.dir));
+        for (const QFileInfo &fi : d.entryInfoList(QDir::Files, QDir::Name)) {
+            const QString rel = QString(c.dir) + "/" + fi.fileName();
+            arr.append(QJsonObject{{"file", fi.fileName()},
+                                   {"rel", rel},
+                                   {"size", double(fi.size())},
+                                   {"managed", managed.contains(rel)}});
+        }
+        out.insert(c.key, arr);
+    }
+    replyOk(id, out);
+}
+
+// Supprime des fichiers de l'instance (chemins relatifs sûrs uniquement) et les
+// retire du registre. NB : un fichier du MANIFESTE supprimé ici sera retéléchargé
+// à la prochaine synchro (intégrité du pack) ; un ajout manuel reste supprimé.
+void Bridge::deleteInstanceFiles(int id, const QJsonObject &params)
+{
+    const QString sid = params.value("id").toString();
+    if (sid.isEmpty()) { replyError(id, "Identifiant manquant."); return; }
+    const QString base = QDir(config::dataRoot()).filePath("instances/" + sid);
+    SyncManager sync(base);
+    QStringList managed = sync.loadInstalled();
+
+    int deleted = 0;
+    for (const QJsonValue &v : params.value("files").toArray()) {
+        const QString rel = v.toString();
+        if (!safeAssetRel(rel)) continue;
+        if (QFile::remove(QDir(base).filePath(rel))) ++deleted;
+        managed.removeAll(rel);
+    }
+    sync.saveInstalled(managed);
+    replyOk(id, QJsonObject{{"deleted", deleted}});
+}
+
+// Ajoute des fichiers (base64) dans une catégorie de l'instance. Ils ne sont PAS
+// inscrits au registre : considérés comme des ajouts manuels du joueur, la
+// synchro ne les supprimera jamais.
+void Bridge::addInstanceFiles(int id, const QJsonObject &params)
+{
+    const QString sid = params.value("id").toString();
+    const QString type = params.value("type").toString();
+    if (sid.isEmpty()) { replyError(id, "Identifiant manquant."); return; }
+    const AssetDir *cat = nullptr;
+    for (const AssetDir &c : kAssetDirs)
+        if (type == c.key) { cat = &c; break; }
+    if (!cat) { replyError(id, "Catégorie inconnue : " + type); return; }
+
+    const QString dirPath = QDir(QDir(config::dataRoot()).filePath("instances/" + sid))
+                                .filePath(cat->dir);
+    QDir().mkpath(dirPath);
+
+    int added = 0;
+    for (const QJsonValue &v : params.value("files").toArray()) {
+        const QJsonObject o = v.toObject();
+        const QString name = QFileInfo(o.value("name").toString()).fileName();  // pas de chemin
+        if (name.isEmpty() || name.startsWith('.')) continue;
+        QFile f(QDir(dirPath).filePath(name));
+        if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) continue;
+        f.write(QByteArray::fromBase64(o.value("base64").toString().toUtf8()));
+        ++added;
+    }
+    replyOk(id, QJsonObject{{"added", added}});
+}
+
 // Ouvre le dossier de l'instance dans l'explorateur de fichiers de l'OS.
 void Bridge::openInstanceFolder(int id, const QJsonObject &params)
 {
@@ -868,6 +971,13 @@ void Bridge::startDownload(int id, const QJsonObject &params)
                     assetPaths << assetLocalPath(type, m);
             if (!assetPaths.isEmpty())
                 sync.markInstalled(assetPaths);
+            // Retire les fichiers GÉRÉS disparus du manifeste (mod retiré ou mis à
+            // jour par l'hébergeur). Les ajouts manuels du joueur sont intouchables.
+            if (!plan.toDeleteMods.isEmpty()) {
+                SyncPlan sp;
+                for (const QString &p : plan.toDeleteMods) sp.toDelete << p;
+                sync.applyDeletions(sp);
+            }
 
             replyOk(id, QJsonObject{{"id", serverId}, {"downloaded", ok}, {"failed", failed}});
             emit event(QJsonObject{{"event", "downloadDone"}, {"id", serverId}, {"failed", failed}});
@@ -1002,6 +1112,12 @@ void Bridge::launch(int id, const QJsonObject &params)
                 for (const ModEntry &m : plan.server.assetList(type))
                     assetPaths << assetLocalPath(type, m);
             if (!assetPaths.isEmpty()) sync.markInstalled(assetPaths);
+            // Sync : purge les fichiers gérés retirés du manifeste (maj hébergeur).
+            if (!plan.toDeleteMods.isEmpty()) {
+                SyncPlan sp;
+                for (const QString &p : plan.toDeleteMods) sp.toDelete << p;
+                sync.applyDeletions(sp);
+            }
 
             // Prépare les dossiers puis démarre le jeu (QProcess détaché).
             QDir().mkpath(plan.gameDir);

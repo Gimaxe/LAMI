@@ -1253,7 +1253,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.47.0";
+        const LAMI_VERSION = "0.48.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -2817,40 +2817,62 @@
         }
 
         // --- RENDU ET ACTIONS DES 4 GRANDS PANNEAUX D'ASSETS ---
-        function renderInstalledServerAssets(server) {
-            const assetTypes = [
-                { key: 'mods', listId: 'inst-srv-mods-list', countId: 'inst-srv-mods-count', icon: 'package' },
-                { key: 'plugins', listId: 'inst-srv-plugins-list', countId: 'inst-srv-plugins-count', icon: 'plug' },
-                { key: 'resourcePacks', listId: 'inst-srv-packs-list', countId: 'inst-srv-packs-count', icon: 'image' },
-                { key: 'shaders', listId: 'inst-srv-shaders-list', countId: 'inst-srv-shaders-count', icon: 'sun' }
-            ];
+        // Catégories du panneau : clé du manifeste UI, clé de l'API backend, éléments DOM.
+        const INSTANCE_ASSET_TYPES = [
+            { key: 'mods', api: 'mods', listId: 'inst-srv-mods-list', countId: 'inst-srv-mods-count', icon: 'package' },
+            { key: 'plugins', api: 'plugins', listId: 'inst-srv-plugins-list', countId: 'inst-srv-plugins-count', icon: 'plug' },
+            { key: 'resourcePacks', api: 'resourcepacks', listId: 'inst-srv-packs-list', countId: 'inst-srv-packs-count', icon: 'image' },
+            { key: 'shaders', api: 'shaders', listId: 'inst-srv-shaders-list', countId: 'inst-srv-shaders-count', icon: 'sun' }
+        ];
 
-            assetTypes.forEach(asset => {
-                const countDisplay = document.getElementById(asset.countId);
-                const listContainer = document.getElementById(asset.listId);
-                const items = server[asset.key] || [];
-
-                countDisplay.innerText = items.length;
-                listContainer.innerHTML = '';
-
-                if (items.length > 0) {
-                    items.forEach((item, idx) => {
-                        const div = document.createElement('div');
-                        div.className = "flex items-center justify-between p-3 rounded-xl border border-neutral-800/40 bg-neutral-950/40 hover:bg-neutral-950/70 hover:border-brand-500/20 transition duration-150 cursor-pointer text-xs text-neutral-300 select-none group";
-                        div.innerHTML = `
-                            <label class="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
-                                <input type="checkbox" id="${asset.key}-${idx}" data-item-name="${item}" class="${asset.key}-checkbox rounded-md border-neutral-800 text-brand focus:ring-brand-500/20 bg-neutral-950 w-4.5 h-4.5 cursor-pointer accent-brand-500">
-                                <span class="truncate font-semibold text-neutral-300 group-hover:text-white transition-colors">${item}</span>
-                            </label>
-                            <i data-lucide="${asset.icon}" class="w-3.5 h-3.5 text-neutral-600 group-hover:text-brand-500 transition-colors ml-2 flex-shrink-0"></i>
-                        `;
-                        listContainer.appendChild(div);
-                    });
-                } else {
-                    listContainer.innerHTML = `<span class="text-xs text-neutral-500 italic p-2 block">Aucun élément installé ou configuré.</span>`;
-                }
+        function renderAssetCategory(asset, items) {
+            const countDisplay = document.getElementById(asset.countId);
+            const listContainer = document.getElementById(asset.listId);
+            countDisplay.innerText = items.length;
+            listContainer.innerHTML = '';
+            if (items.length === 0) {
+                listContainer.innerHTML = `<span class="text-xs text-neutral-500 italic p-2 block">Aucun élément installé ou configuré.</span>`;
+                return;
+            }
+            items.forEach((item, idx) => {
+                // item : { file, rel, managed } (réel) ou une simple chaîne (démo).
+                const file = typeof item === 'string' ? item : item.file;
+                const rel = typeof item === 'string' ? '' : item.rel;
+                const badge = (typeof item === 'string') ? ''
+                    : item.managed
+                        ? '<span class="text-[9px] font-bold uppercase tracking-wider text-brand-500/80 bg-brand/10 border border-brand/20 px-1.5 py-0.5 rounded flex-shrink-0">Serveur</span>'
+                        : '<span class="text-[9px] font-bold uppercase tracking-wider text-amber-400/80 bg-amber-950/30 border border-amber-500/20 px-1.5 py-0.5 rounded flex-shrink-0">Perso</span>';
+                const div = document.createElement('div');
+                div.className = "flex items-center justify-between p-3 rounded-xl border border-neutral-800/40 bg-neutral-950/40 hover:bg-neutral-950/70 hover:border-brand-500/20 transition duration-150 cursor-pointer text-xs text-neutral-300 select-none group";
+                div.innerHTML = `
+                    <label class="flex items-center gap-3 cursor-pointer flex-1 min-w-0">
+                        <input type="checkbox" id="${asset.key}-${idx}" data-item-name="${file}" data-item-rel="${rel}" class="${asset.key}-checkbox rounded-md border-neutral-800 text-brand focus:ring-brand-500/20 bg-neutral-950 w-4.5 h-4.5 cursor-pointer accent-brand-500">
+                        <span class="truncate font-semibold text-neutral-300 group-hover:text-white transition-colors">${file}</span>
+                    </label>
+                    <div class="flex items-center gap-2 ml-2 flex-shrink-0">
+                        ${badge}
+                        <i data-lucide="${asset.icon}" class="w-3.5 h-3.5 text-neutral-600 group-hover:text-brand-500 transition-colors"></i>
+                    </div>
+                `;
+                listContainer.appendChild(div);
             });
+        }
 
+        function renderInstalledServerAssets(server) {
+            // Backend connecté + serveur installé : on liste le DISQUE réel (vérité
+            // terrain) — un fichier supprimé/ajouté à la main apparaît tel quel.
+            if (window.lami && window.lami.connected && server.installed) {
+                lami.call('listInstanceFiles', { id: server.id }).then(function (r) {
+                    INSTANCE_ASSET_TYPES.forEach(a => renderAssetCategory(a, r[a.api] || []));
+                    lucide.createIcons();
+                }).catch(function () {
+                    INSTANCE_ASSET_TYPES.forEach(a => renderAssetCategory(a, server[a.key] || []));
+                    lucide.createIcons();
+                });
+                return;
+            }
+            // Démo / non connecté : listes du manifeste.
+            INSTANCE_ASSET_TYPES.forEach(a => renderAssetCategory(a, server[a.key] || []));
             lucide.createIcons();
         }
 
@@ -2978,27 +3000,38 @@
         }
 
         // --- CRÉATION / AJOUT / RETRAIT SUR LES 4 DOSSIERS INTERACTIFS ---
+        // Ajout RÉEL : sélecteur de fichiers → octets envoyés au backend, écrits
+        // dans le dossier de la catégorie. Non inscrits au registre : la synchro
+        // ne supprimera jamais ces ajouts « perso ».
         function simulateAddAsset(type, extension) {
             if (!currentlySelectedServer) return;
-
-            const name = prompt(`Entrez le nom du fichier à ajouter (${extension}) :`);
-            if (!name || name.trim() === "") return;
-
-            let cleanName = name.trim();
-            if (!cleanName.endsWith(extension)) {
-                cleanName += extension;
+            const cat = INSTANCE_ASSET_TYPES.find(a => a.key === type);
+            if (!(window.lami && window.lami.connected && cat && currentlySelectedServer.installed)) {
+                showToast('Disponible uniquement dans le launcher, serveur installé.', 'info');
+                return;
             }
-
-            if (!currentlySelectedServer[type]) {
-                currentlySelectedServer[type] = [];
-            }
-
-            currentlySelectedServer[type].push(cleanName);
-            showToast(`"${cleanName}" a été installé avec succès !`, "success");
-
-            renderInstalledServerAssets(currentlySelectedServer);
+            const input = document.createElement('input');
+            input.type = 'file';
+            input.multiple = true;
+            input.accept = extension;
+            input.onchange = function () {
+                const files = Array.from(input.files || []);
+                if (files.length === 0) return;
+                Promise.all(files.map(f => fileToBase64(f).then(b64 => ({ name: f.name, base64: b64 }))))
+                    .then(list => lami.call('addInstanceFiles',
+                        { id: currentlySelectedServer.id, type: cat.api, files: list }, 300000))
+                    .then(r => {
+                        showToast(`${r.added} fichier(s) ajouté(s).`, 'success');
+                        renderInstalledServerAssets(currentlySelectedServer);
+                    })
+                    .catch(err => showToast('Ajout échoué : ' + (err.message || err), 'error'));
+            };
+            input.click();
         }
 
+        // Suppression RÉELLE : les fichiers cochés sont effacés du disque. Un
+        // fichier « Serveur » (du manifeste) sera réinstallé à la prochaine
+        // synchro (intégrité du pack) ; un fichier « Perso » reste supprimé.
         function deleteSelectedAssets(type) {
             if (!currentlySelectedServer) return;
 
@@ -3008,11 +3041,21 @@
                 return;
             }
 
+            if (window.lami && window.lami.connected && currentlySelectedServer.installed) {
+                const rels = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-item-rel')).filter(Boolean);
+                lami.call('deleteInstanceFiles', { id: currentlySelectedServer.id, files: rels })
+                    .then(r => {
+                        showToast(`${r.deleted} fichier(s) supprimé(s) du disque.`, 'success');
+                        renderInstalledServerAssets(currentlySelectedServer);
+                    })
+                    .catch(err => showToast('Suppression échouée : ' + (err.message || err), 'error'));
+                return;
+            }
+
+            // Démo (page seule) : retrait de la liste affichée uniquement.
             const itemsToDelete = Array.from(checkedBoxes).map(cb => cb.getAttribute('data-item-name'));
             currentlySelectedServer[type] = currentlySelectedServer[type].filter(item => !itemsToDelete.includes(item));
-
             showToast(`${itemsToDelete.length} élément(s) supprimé(s).`, "success");
-
             renderInstalledServerAssets(currentlySelectedServer);
         }
 
