@@ -143,6 +143,33 @@ int main()
                                       (dir + "/web/assets/lami-icon.png").c_str(), nullptr);
 #endif
 
+    // Contrôle de la fenêtre depuis l'UI (réglage « Fermeture du launcher ») :
+    //   window.lamiWindowControl('["close"]' | '["hide"]' | '["show"]')
+    // - close : quitte le launcher (le jeu, processus indépendant, survit) ;
+    // - hide  : masque la fenêtre pendant que le jeu tourne ;
+    // - show  : la réaffiche (à la fermeture du jeu).
+    w.bind("lamiWindowControl", [&](const std::string &req) -> std::string {
+        const bool isClose = req.find("close") != std::string::npos;
+        const bool isHide  = req.find("hide")  != std::string::npos;
+        const bool isShow  = req.find("show")  != std::string::npos;
+        if (isClose) {
+            w.dispatch([&w]() { w.terminate(); });
+            return "true";
+        }
+#ifdef _WIN32
+        if (HWND hwnd = static_cast<HWND>(w.window())) {
+            if (isHide) ShowWindow(hwnd, SW_HIDE);
+            else if (isShow) { ShowWindow(hwnd, SW_SHOW); SetForegroundWindow(hwnd); }
+        }
+#else
+        if (GtkWidget *win = static_cast<GtkWidget *>(w.window())) {
+            if (isHide) gtk_widget_hide(win);
+            else if (isShow) { gtk_widget_show(win); gtk_window_present(GTK_WINDOW(win)); }
+        }
+#endif
+        return "true";
+    });
+
     w.init("window.LAMI_WS_PORT = " + std::to_string(kWsPort) + ";");
     w.navigate(uiUrl(dir));
     w.run();
