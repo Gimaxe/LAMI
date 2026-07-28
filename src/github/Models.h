@@ -40,6 +40,7 @@ struct ServerInfo {
     QVector<ModEntry> resourcePacks; // resource packs (client)
     QVector<ModEntry> shaders;       // shaders (client)
     QString owner;             // UUID Minecraft du créateur (pour les droits de modif/suppression)
+    QString ownerName;         // pseudo Minecraft VÉRIFIÉ du créateur (affichage)
     bool    valid = false;     // false si le parsing a échoué
 
     // Accès à une catégorie par son nom (assets::*).

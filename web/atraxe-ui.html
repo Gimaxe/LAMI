@@ -1279,7 +1279,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.49.0";
+        const LAMI_VERSION = "0.50.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -2623,7 +2623,7 @@
                 db.classList.add('flex');
 
                 document.getElementById('inst-srv-name').innerText = server.name;
-                document.getElementById('inst-srv-creator').innerText = `${server.creator || 'Atraxe Team'}`;
+                document.getElementById('inst-srv-creator').innerText = `${server.creator || 'Inconnu'}`;
                 document.getElementById('inst-srv-ip').innerText = server.ip;
                 document.getElementById('inst-srv-logo').innerText = server.name.substring(0, 2).toUpperCase();
                 document.getElementById('inst-srv-version').innerText = server.version || '?';

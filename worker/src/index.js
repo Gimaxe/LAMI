@@ -92,9 +92,9 @@ export default {
           return cors(json(await handleUpload(gh, body)));
         case "/publish":
           requireRole(role, ["host", "superadmin"]);
-          return cors(json(await handlePublish(gh, body, uuid)));
+          return cors(json(await handlePublish(gh, body, uuid, identity.name)));
         case "/edit":
-          return cors(json(await handleEdit(gh, body, uuid, role)));
+          return cors(json(await handleEdit(gh, body, uuid, role, identity.name)));
         case "/delete":
           return cors(json(await handleDelete(gh, body, uuid, role)));
         case "/setRole":
@@ -254,7 +254,7 @@ function requireRole(role, allowed) {
 // --------------------------------------------------------------------------
 
 // Publier : le propriétaire = l'uuid AUTHENTIFIÉ (jamais celui du client).
-async function handlePublish(gh, body, uuid) {
+async function handlePublish(gh, body, uuid, ownerName) {
   const srv = body.server || {};
   const id = slugify(srv.id || srv.name || "");
   if (!id || !srv.name || !srv.address) throw err(400, "Serveur incomplet (nom/adresse/id).");
@@ -266,7 +266,7 @@ async function handlePublish(gh, body, uuid) {
     if (role !== "superadmin") throw err(403, "Ce serveur appartient à un autre hébergeur.");
   }
 
-  const manifest = buildManifest(srv, uuid);
+  const manifest = buildManifest(srv, uuid, ownerName);
   if (body.assets && Object.keys(body.assets).length) {
     // Petit publish : assets en base64 uploadés directement.
     await uploadAssets(gh, manifest, body.assets);
@@ -284,13 +284,16 @@ async function handlePublish(gh, body, uuid) {
 
 // Modifier : seulement propriétaire ou admin. Métadonnées uniquement ici
 // (les assets suivent le même chemin que publish si fournis).
-async function handleEdit(gh, body, uuid, role) {
+async function handleEdit(gh, body, uuid, role, editorName) {
   const id = slugify(body.id || "");
   if (!id) throw err(400, "id manquant.");
   const cur = await gh.readJson(`servers/${id}.json`);
   if (!cur) throw err(404, "Serveur introuvable.");
   if (cur.owner && cur.owner !== uuid && role !== "superadmin")
     throw err(403, "Tu ne peux modifier que TES serveurs.");
+  // Complète le pseudo du propriétaire pour les anciens manifestes qui ne
+  // l'avaient pas (le pseudo affiché reste TOUJOURS celui du propriétaire).
+  if (!cur.owner_name && cur.owner === uuid && editorName) cur.owner_name = editorName;
 
   const c = body.changes || {};
   if (c.name) cur.name = c.name;
@@ -356,7 +359,7 @@ async function handleRemoveRole(gh, body) {
 // --------------------------------------------------------------------------
 const ASSET_TYPES = ["mods", "plugins", "resourcepacks", "shaders"];
 
-function buildManifest(srv, uuid) {
+function buildManifest(srv, uuid, ownerName) {
   return {
     id: slugify(srv.id || srv.name),
     name: srv.name,
@@ -369,6 +372,9 @@ function buildManifest(srv, uuid) {
     resourcepacks: srv.resourcepacks || srv.resourcePacks || [],
     shaders: srv.shaders || [],
     owner: uuid,
+    // Pseudo Minecraft VÉRIFIÉ du publieur (via Mojang) — affiché comme
+    // « créateur » dans le launcher. Jamais fourni par le client.
+    owner_name: ownerName || "",
   };
 }
 

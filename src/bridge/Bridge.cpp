@@ -54,6 +54,7 @@ QJsonObject serverToUiJson(const ServerInfo &s)
         {"plugins", namesOf(s.plugins)},
         {"resourcePacks", namesOf(s.resourcePacks)},
         {"shaders", namesOf(s.shaders)},
+        {"creator", s.ownerName},   // pseudo vérifié du publieur ('' si ancien manifeste)
         {"installed", false},
     };
 }
