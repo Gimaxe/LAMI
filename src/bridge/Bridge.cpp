@@ -51,6 +51,7 @@ QJsonObject serverToUiJson(const ServerInfo &s)
         {"id", s.id},
         {"name", s.name},
         {"ip", s.address},
+        {"port", s.port},
         {"version", s.minecraftVersion},
         {"loader", loader.isEmpty() ? QStringLiteral("Vanilla") : loader},
         {"mods", namesOf(s.mods)},
@@ -1361,7 +1362,7 @@ void nbtNamedStr(QByteArray &b, const QByteArray &name, const QByteArray &value)
 //  - servers.dat : le serveur de l'instance pré-enregistré dans la liste
 //    multijoueur (NBT non compressé : compound racine → liste "servers").
 void writeDefaultGameFiles(const QString &gameDir, const QString &srvName,
-                           const QString &srvAddress)
+                           const QString &srvAddress, int srvPort)
 {
     const QString optionsPath = QDir(gameDir).filePath("options.txt");
     if (!QFileInfo::exists(optionsPath)) {
@@ -1377,7 +1378,11 @@ void writeDefaultGameFiles(const QString &gameDir, const QString &srvName,
         nbt.append(char(9));  nbtStr(nbt, "servers");    // TAG_List "servers"
         nbt.append(char(10));                            // ...de TAG_Compound
         nbt.append(char(0)); nbt.append(char(0)); nbt.append(char(0)); nbt.append(char(1));  // count = 1
-        nbtNamedStr(nbt, "ip", srvAddress.toUtf8());
+        // Minecraft attend « adresse:port » dès que le port n'est pas le défaut.
+        const QString hostPort = (srvPort > 0 && srvPort != 25565)
+            ? QStringLiteral("%1:%2").arg(srvAddress).arg(srvPort)
+            : srvAddress;
+        nbtNamedStr(nbt, "ip", hostPort.toUtf8());
         nbtNamedStr(nbt, "name",
                     (srvName.isEmpty() ? srvAddress : srvName).toUtf8());
         nbt.append(char(0));                             // fin du compound élément
@@ -1449,7 +1454,7 @@ void Bridge::launch(int id, const QJsonObject &params)
             QDir().mkpath(plan.gameDir);
             // Premier lancement : jeu en français + serveur pré-enregistré dans
             // la liste multijoueur (jamais écrasé si le joueur a déjà des réglages).
-            writeDefaultGameFiles(plan.gameDir, plan.server.name, plan.server.address);
+            writeDefaultGameFiles(plan.gameDir, plan.server.name, plan.server.address, plan.server.port);
             QStringList cmd = plan.launchCommand;
             if (cmd.isEmpty()) { replyError(id, "Commande de lancement vide."); return; }
             const QString program = cmd.takeFirst();
@@ -1680,6 +1685,7 @@ void Bridge::publishServer(int id, const QJsonObject &params)
     srv.minecraftVersion = params.value("version").toString().trimmed();
     srv.loader           = params.value("loader").toString().trimmed().toLower();
     srv.loaderVersion    = params.value("loaderVersion").toString();
+    srv.port             = params.value("port").toInt(25565);
     srv.id               = params.value("id").toString().trimmed();
     if (srv.id.isEmpty())
         srv.id = slugify(srv.name);
@@ -1715,6 +1721,7 @@ void Bridge::publishServer(int id, const QJsonObject &params)
     if (useWorker()) {
         const QJsonObject server{
             {"id", srv.id}, {"name", srv.name}, {"address", srv.address},
+            {"port", srv.port},
             {"minecraft_version", srv.minecraftVersion}, {"loader", srv.loader},
             {"loader_version", srv.loaderVersion}};
         // Chunké : uploade les assets par lots via /upload, puis /publish (métadonnées).
@@ -1774,6 +1781,7 @@ void Bridge::editServer(int id, const QJsonObject &params)
         auto sof = [&params](const char *k) { return params.value(k).toString().trimmed(); };
         if (!sof("name").isEmpty())    changes["name"] = sof("name");
         if (!sof("ip").isEmpty())      changes["address"] = sof("ip");
+        if (params.value("port").toInt(0) > 0) changes["port"] = params.value("port").toInt();
         if (!sof("version").isEmpty()) changes["minecraft_version"] = sof("version");
         if (!sof("loader").isEmpty())  changes["loader"] = sof("loader").toLower();
         if (params.contains("loaderVersion")) changes["loader_version"] = params.value("loaderVersion").toString();

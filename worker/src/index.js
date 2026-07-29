@@ -298,6 +298,7 @@ async function handleEdit(gh, body, uuid, role, editorName) {
   const c = body.changes || {};
   if (c.name) cur.name = c.name;
   if (c.address) cur.address = c.address;
+  if (c.port) cur.port = parseInt(c.port, 10) || 25565;
   if (c.minecraft_version) cur.minecraft_version = c.minecraft_version;
   if (c.loader) cur.loader = (c.loader + "").toLowerCase();
   if (typeof c.loader_version === "string") cur.loader_version = c.loader_version;
@@ -364,6 +365,7 @@ function buildManifest(srv, uuid, ownerName) {
     id: slugify(srv.id || srv.name),
     name: srv.name,
     address: srv.address,
+    port: parseInt(srv.port, 10) || 25565,
     minecraft_version: srv.minecraft_version || srv.version || "",
     loader: (srv.loader || "vanilla").toLowerCase(),
     loader_version: srv.loader_version || srv.loaderVersion || "",

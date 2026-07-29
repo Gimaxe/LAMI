@@ -22,6 +22,7 @@ ServerInfo parseServer(const QJsonObject &obj, const QString &fallbackId)
     s.id      = obj.value("id").toString(fallbackId);
     s.name    = obj.value("name").toString(s.id);
     s.address = obj.value("address").toString();
+    s.port    = obj.value("port").toInt(25565);
 
     s.minecraftVersion = obj.contains("minecraft_version")
         ? obj.value("minecraft_version").toString()
