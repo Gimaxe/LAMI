@@ -243,7 +243,7 @@
         <header class="h-16 border-b border-neutral-800/40 px-8 flex items-center justify-between flex-shrink-0 gap-4">
             <div class="flex items-center gap-3">
                 <span class="w-2.5 h-2.5 rounded-full bg-brand shadow-glow animate-pulse"></span>
-                <span id="current-tab-title" class="text-sm font-bold tracking-wide text-neutral-300">Rejoindre un Serveur</span>
+                <span id="current-tab-title" class="text-sm font-bold tracking-wide text-neutral-300">Rejoindre un serveur</span>
             </div>
             
             <div class="flex items-center gap-4">
@@ -563,10 +563,6 @@
 
             <!-- ================= ONGLET : PUBLIER UN SERVEUR ================= -->
             <div id="tab-content-publier" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl 3xl:max-w-5xl 4xl:max-w-6xl 5xl:max-w-7xl mx-auto w-full">
-                
-                <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
-                    <h2 class="text-xl font-black text-white">Publier un serveur de jeu</h2>
-                </div>
 
                 <!-- Formulaire de Publication -->
                 <form id="form-publish-server" onsubmit="handlePublishServer(event)" class="flex flex-col gap-5 mt-2">
@@ -727,11 +723,13 @@
             <!-- ================= ONGLET : MODIFIER UN SERVEUR (CLONE EXACT DE PUBLIER) ================= -->
             <div id="tab-content-modifier" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl 3xl:max-w-5xl 4xl:max-w-6xl 5xl:max-w-7xl mx-auto w-full animate-fade-in">
                 
+                <!-- Le titre de la page est déjà affiché dans la barre du haut :
+                     on ne garde ici que le retour vers les publications. -->
                 <div class="flex items-center gap-3 pb-2 border-b border-neutral-800">
-                    <button onclick="switchTab('mes-publications')" class="p-1 rounded bg-neutral-950/60 border border-neutral-800 hover:border-brand hover:text-brand transition-all cursor-pointer" title="Retour aux publications">
+                    <button onclick="switchTab('mes-publications')" class="flex items-center gap-2 px-2 py-1 rounded-lg text-xs font-bold text-neutral-400 hover:text-brand-500 hover:bg-neutral-900/60 border border-neutral-800 transition-all cursor-pointer" title="Retour aux publications">
                         <i data-lucide="arrow-left" class="w-4 h-4"></i>
+                        <span>Retour aux publications</span>
                     </button>
-                    <h2 class="text-xl font-black text-white">Modifier la configuration du serveur</h2>
                 </div>
 
                 <!-- Formulaire de Modification (Clone structurel de Publier) -->
@@ -875,10 +873,6 @@
 
             <!-- ================= ONGLET : MES PUBLICATIONS ================= -->
             <div id="tab-content-mes-publications" class="tab-panel hidden flex-col gap-6 max-w-5xl 2xl:max-w-7xl 3xl:max-w-[1600px] 4xl:max-w-[2000px] 5xl:max-w-[2400px] mx-auto w-full">
-                
-                <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
-                    <h2 class="text-xl font-black text-white">Mes serveurs publiés</h2>
-                </div>
 
                 <!-- Liste linéaire (sur une seule ligne par serveur) -->
                 <div class="flex flex-col gap-3 mt-2" id="user-published-servers-container">
@@ -889,10 +883,6 @@
 
             <!-- ================= ONGLET : ADMINISTRATION ================= -->
             <div id="tab-content-admin" class="tab-panel hidden flex-col gap-6 max-w-4xl 2xl:max-w-5xl 3xl:max-w-6xl 4xl:max-w-7xl 5xl:max-w-[1800px] mx-auto w-full">
-                
-                <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
-                    <h2 class="text-xl font-black text-white">Administration du Launcher (LAMI)</h2>
-                </div>
 
                 <!-- Gestion par UUID -->
                 <div class="bg-neutral-950/40 border border-neutral-800/60 rounded-2xl p-6 flex flex-col gap-4">
@@ -940,10 +930,6 @@
 
             <!-- ================= ONGLET : SKINS ================= -->
             <div id="tab-content-skins" class="tab-panel hidden flex-col gap-6 max-w-4xl xl:max-w-5xl 2xl:max-w-6xl 3xl:max-w-7xl 4xl:max-w-[1700px] 5xl:max-w-[2000px] mx-auto w-full animate-fade-in">
-                
-                <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
-                    <h2 class="text-xl font-black text-white">Gestionnaire de Skins 3D</h2>
-                </div>
 
                 <!-- Zone principale du visualiseur 3D interactif -->
                 <div class="flex flex-col gap-6 items-stretch mt-2 w-full">
@@ -1017,10 +1003,6 @@
 
             <!-- ================= ONGLET : RÉGLAGES ================= -->
             <div id="tab-content-reglages" class="tab-panel hidden flex-col gap-6 max-w-3xl xl:max-w-4xl 3xl:max-w-5xl 4xl:max-w-6xl 5xl:max-w-7xl mx-auto w-full">
-                
-                <div class="flex flex-col gap-1.5 pb-2 border-b border-neutral-800">
-                    <h2 class="text-xl font-black text-white">Paramètres du Launcher</h2>
-                </div>
 
                 <div class="flex flex-col gap-5 mt-2">
                     
@@ -1309,7 +1291,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.69.0";
+        const LAMI_VERSION = "0.70.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1836,13 +1818,13 @@
 
             // Mettre à jour le titre du Header
             const headerTitles = {
-                rejoindre: "Rejoindre un Serveur",
-                publier: "Publier un Serveur de jeu",
-                'mes-publications': "Mes Serveurs Publiés",
-                admin: "Administration du Launcher",
-                skins: "Gestionnaire de Skins 3D",
+                rejoindre: "Rejoindre un serveur",
+                publier: "Publier un serveur de jeu",
+                'mes-publications': "Mes serveurs publiés",
+                admin: "Administration du launcher",
+                skins: "Gestionnaire de skins 3D",
                 reglages: "Paramètres du launcher",
-                modifier: "Modifier la configuration"
+                modifier: "Modifier la configuration du serveur"
             };
             document.getElementById('current-tab-title').innerText = headerTitles[tabName] || "Launcher Atraxe";
 
