@@ -656,11 +656,13 @@ void Bridge::listSkins(int id)
 
 // Importe un skin DANS UN SLOT : toujours enregistré sous skin-<slot>.png
 // (nommage stable → l'emplacement retrouve son skin au prochain démarrage).
+// Tous les emplacements sont remplaçables, y compris le 1 (pré-rempli avec le
+// skin du compte au premier lancement).
 void Bridge::importSkin(int id, const QJsonObject &params)
 {
     const int slot = params.value("slot").toInt(0);
     const QString b64 = params.value("base64").toString();
-    if (slot <= 1) { replyError(id, "Slot invalide (1 est réservé au skin d'origine)."); return; }
+    if (slot < 1) { replyError(id, "Slot invalide."); return; }
     if (b64.isEmpty()) { replyError(id, "Fichier manquant."); return; }
     const QByteArray png = QByteArray::fromBase64(b64.toUtf8());
     if (!png.startsWith("\x89PNG")) { replyError(id, "Le fichier doit être un PNG."); return; }
@@ -683,7 +685,7 @@ void Bridge::saveAccountSkinToSlot(int id, const QJsonObject &params)
 {
     const int slot = params.value("slot").toInt(0);
     const QString url = params.value("url").toString();
-    if (slot <= 1) { replyError(id, "Slot invalide (1 est réservé au skin d'origine)."); return; }
+    if (slot < 1) { replyError(id, "Slot invalide."); return; }
     if (url.isEmpty()) { replyError(id, "URL du skin manquante."); return; }
     QNetworkRequest req{QUrl(url)};
     req.setHeader(QNetworkRequest::UserAgentHeader, "LAMI-Launcher");
@@ -710,7 +712,6 @@ void Bridge::deleteSkinFile(int id, const QJsonObject &params)
 {
     const QString name = QFileInfo(params.value("file").toString()).fileName();
     if (name.isEmpty()) { replyError(id, "Fichier manquant."); return; }
-    if (name == "skin-1.png") { replyError(id, "Le skin d'origine est protégé."); return; }
     const bool ok = QFile::remove(QDir(skinsDir()).filePath(name));
     replyOk(id, QJsonObject{{"deleted", ok}});
 }

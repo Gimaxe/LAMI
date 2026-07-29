@@ -1193,8 +1193,8 @@
                     </div>
                 </div>
                 <div class="flex justify-center">
-                    <canvas id="skin-import-preview" width="64" height="64"
-                            class="w-28 h-28 rounded-2xl border border-neutral-800 bg-neutral-950"
+                    <canvas id="skin-import-preview" width="128" height="256"
+                            class="w-24 h-48 rounded-2xl border border-neutral-800 bg-neutral-950"
                             style="image-rendering: pixelated;"></canvas>
                 </div>
                 <div class="flex gap-3 justify-end">
@@ -1212,7 +1212,7 @@
                     <div class="min-w-0">
                         <h2 class="text-lg font-black text-white">Quel emplacement remplacer&nbsp;?</h2>
                         <p class="text-sm text-neutral-400 mt-1.5 leading-relaxed">
-                            Choisis où enregistrer le skin. L'emplacement 1 conserve ton skin d'origine.
+                            Choisis où enregistrer le skin. L'emplacement sélectionné sera remplacé.
                         </p>
                     </div>
                 </div>
@@ -1317,7 +1317,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.64.0";
+        const LAMI_VERSION = "0.65.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -2206,6 +2206,7 @@
                 const clickedSlotId = hitObject.userData.slotId;
                 if (clickedSlotId !== undefined && clickedSlotId !== activeSlotIndex) {
                     activeSlotIndex = clickedSlotId;
+                    syncActiveRotation();
                     updateSkinInterface();
                     isDragging3D = false; 
                 }
@@ -2247,6 +2248,7 @@
                 const clickedSlotId = hitObject.userData.slotId;
                 if (clickedSlotId !== undefined && clickedSlotId !== activeSlotIndex) {
                     activeSlotIndex = clickedSlotId;
+                    syncActiveRotation();
                     updateSkinInterface();
                     isDragging3D = false;
                 }
@@ -2544,9 +2546,9 @@
                     if (!isDragging3D) {
                         activeRotationY += 0.003;
                     }
-                    modelGroup.rotation.y = THREE.MathUtils.lerp(modelGroup.rotation.y, activeRotationY, 0.1);
+                    modelGroup.rotation.y = THREE.MathUtils.lerp(modelGroup.rotation.y, activeRotationY, 0.05);
                 } else {
-                    modelGroup.rotation.y = THREE.MathUtils.lerp(modelGroup.rotation.y, target.rotY, 0.12);
+                    modelGroup.rotation.y = THREE.MathUtils.lerp(modelGroup.rotation.y, target.rotY, 0.06);
                 }
 
                 if (skinCache[i].empty) {
@@ -2605,18 +2607,39 @@
         // L'utilisateur choisit LUI-MÊME l'emplacement à remplacer.
         let externalSkinPrompted = false;
 
-        // Dessine le VISAGE d'un skin (base + calque chapeau) dans un canvas :
-        // un aperçu reconnaissable en un coup d'œil, contrairement à la texture
-        // brute 64x64 qui est illisible.
-        function drawSkinFace(canvas, dataUrl) {
+        // Dessine le CORPS ENTIER de face (base + 2e couche) dans un canvas.
+        // Le personnage tient dans une grille de 16x32 pixels de skin :
+        // bras(4) + torse(8) + bras(4) de large, tête(8) + torse(12) + jambes(12).
+        function drawSkinBody(canvas, dataUrl) {
             if (!canvas || !dataUrl) return;
             const ctx = canvas.getContext('2d');
             const img = new Image();
             img.onload = function () {
+                const s = canvas.width / 16;   // pixels de canvas par pixel de skin
+                const slim = (img.height === 32);   // ancien format : pas de membres gauches
                 ctx.imageSmoothingEnabled = false;
                 ctx.clearRect(0, 0, canvas.width, canvas.height);
-                ctx.drawImage(img, 8, 8, 8, 8, 0, 0, canvas.width, canvas.height);      // visage
-                ctx.drawImage(img, 40, 8, 8, 8, 0, 0, canvas.width, canvas.height);     // calque
+                // [sourceX, sourceY, w, h, destX, destY] — faces avant.
+                const base = [
+                    [8, 8, 8, 8, 4, 0],                            // tête
+                    [20, 20, 8, 12, 4, 8],                         // torse
+                    [44, 20, 4, 12, 0, 8],                         // bras droit
+                    [slim ? 44 : 36, slim ? 20 : 52, 4, 12, 12, 8],// bras gauche
+                    [4, 20, 4, 12, 4, 20],                         // jambe droite
+                    [slim ? 4 : 20, slim ? 20 : 52, 4, 12, 8, 20], // jambe gauche
+                ];
+                const overlay = slim ? [[40, 8, 8, 8, 4, 0]] : [
+                    [40, 8, 8, 8, 4, 0],      // casque
+                    [20, 36, 8, 12, 4, 8],    // veste
+                    [44, 36, 4, 12, 0, 8],    // manche droite
+                    [52, 52, 4, 12, 12, 8],   // manche gauche
+                    [4, 36, 4, 12, 4, 20],    // pantalon droit
+                    [4, 52, 4, 12, 8, 20],    // pantalon gauche
+                ];
+                base.concat(overlay).forEach(function (p) {
+                    ctx.drawImage(img, p[0], p[1], p[2], p[3],
+                                  p[4] * s, p[5] * s, p[2] * s, p[3] * s);
+                });
             };
             img.onerror = function () { ctx.clearRect(0, 0, canvas.width, canvas.height); };
             img.src = dataUrl;
@@ -2629,7 +2652,7 @@
             document.getElementById('skin-import-step1').classList.add('flex');
             document.getElementById('skin-import-step2').classList.add('hidden');
             document.getElementById('skin-import-step2').classList.remove('flex');
-            drawSkinFace(document.getElementById('skin-import-preview'), accountSkinDataUrl);
+            drawSkinBody(document.getElementById('skin-import-preview'), accountSkinDataUrl);
             document.getElementById('skin-import-modal').classList.remove('hidden');
             lucide.createIcons();
         }
@@ -2646,24 +2669,19 @@
             grid.innerHTML = '';
             skinCache.forEach(function (slot, i) {
                 const n = i + 1;
-                const locked = (n === 1);   // emplacement 1 = sauvegarde d'origine
                 const btn = document.createElement('button');
-                btn.disabled = locked;
-                btn.className = locked
-                    ? "flex flex-col items-center gap-2 p-3 rounded-2xl border border-neutral-800 bg-neutral-900/40 text-neutral-600 cursor-not-allowed"
-                    : "flex flex-col items-center gap-2 p-3 rounded-2xl border border-neutral-800 bg-neutral-900 hover:bg-neutral-850 hover:border-brand/50 text-neutral-200 transition-all cursor-pointer";
+                btn.className = "flex flex-col items-center gap-2 p-3 rounded-2xl border border-neutral-800 bg-neutral-900 hover:bg-neutral-850 hover:border-brand/50 text-neutral-200 transition-all cursor-pointer";
                 const canvasId = 'skin-slot-preview-' + i;
                 btn.innerHTML = `
-                    <canvas id="${canvasId}" width="64" height="64"
-                            class="w-14 h-14 rounded-xl border border-neutral-800 bg-neutral-950"
+                    <canvas id="${canvasId}" width="96" height="192"
+                            class="w-12 h-24 rounded-xl border border-neutral-800 bg-neutral-950"
                             style="image-rendering: pixelated;"></canvas>
                     <span class="text-xs font-black">Emplacement ${n}</span>
                     <span class="text-[10px] text-neutral-500 text-center leading-tight">${
-                        locked ? "Skin d'origine<br>(protégé)"
-                               : (slot.empty ? 'Libre' : 'Sera remplacé')}</span>`;
-                if (!locked) btn.onclick = function () { saveExternalSkinToSlot(i); };
+                        slot.empty ? 'Libre' : 'Sera remplacé'}</span>`;
+                btn.onclick = function () { saveExternalSkinToSlot(i); };
                 grid.appendChild(btn);
-                if (slot.dataUrl) drawSkinFace(document.getElementById(canvasId), slot.dataUrl);
+                if (slot.dataUrl) drawSkinBody(document.getElementById(canvasId), slot.dataUrl);
             });
             lucide.createIcons();
         }
@@ -2688,11 +2706,18 @@
         // Bandeau discret (toujours disponible) pour rouvrir la proposition.
         function saveExternalSkin() { showSkinImportModal(); }
 
+        // Aligne l'angle de référence sur la rotation actuelle du modèle qui
+        // devient actif : évite le rattrapage brutal de plusieurs tours.
+        function syncActiveRotation() {
+            const m = (typeof char3DModels !== 'undefined') ? char3DModels[activeSlotIndex] : null;
+            activeRotationY = m ? m.rotation.y : 0;
+        }
+
         function cycleSkinSlot(direction) {
             activeSlotIndex += direction;
             if (activeSlotIndex < 0) activeSlotIndex = skinCache.length - 1;
             if (activeSlotIndex >= skinCache.length) activeSlotIndex = 0;
-            activeRotationY = 0;
+            syncActiveRotation();
             updateSkinInterface();
         }
 
@@ -2755,10 +2780,6 @@
                 return;
             }
             const target = skinCache[activeSlotIndex];
-            if (target && target.isAccount) {
-                showToast("L'emplacement 1 conserve le skin de ton compte : importe dans le 2 ou le 3.", "info");
-                return;
-            }
             const input = document.createElement('input');
             input.type = 'file';
             input.accept = '.png,image/png';
@@ -2890,12 +2911,6 @@
         function clearSkinSlot() {
             const activeSkin = skinCache[activeSlotIndex];
             if (!activeSkin) return;
-
-            // Le slot du compte reflète le skin Minecraft réel : il ne se vide pas.
-            if (activeSkin.isAccount) {
-                showToast("Ce slot affiche le skin de ton compte Minecraft.", "info");
-                return;
-            }
 
             if (activeSkin.isActive) {
                 showToast("Vous ne pouvez pas vider le skin actuellement équipé.", "error");
