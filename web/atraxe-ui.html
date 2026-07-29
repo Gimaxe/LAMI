@@ -1317,7 +1317,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.63.0";
+        const LAMI_VERSION = "0.64.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -2403,30 +2403,30 @@
 
                 const headGeo = new THREE.BoxGeometry(1.4, 1.4, 1.4);
                 const head = new THREE.Mesh(headGeo, shadowMat);
-                head.position.y = 1.8;
+                head.position.y = 1.75;
                 group.add(head);
 
-                const torsoGeo = new THREE.BoxGeometry(1.4, 2.0, 0.7);
+                const torsoGeo = new THREE.BoxGeometry(1.4, 2.1, 0.7);
                 const torso = new THREE.Mesh(torsoGeo, shadowMat);
-                torso.position.y = 0.1;
+                torso.position.y = 0;
                 group.add(torso);
 
-                const armGeo = new THREE.BoxGeometry(0.65, 2.0, 0.65);
+                const armGeo = new THREE.BoxGeometry(0.7, 2.1, 0.7);
                 const leftArm = new THREE.Mesh(armGeo, shadowMat);
-                leftArm.position.set(-1.1, 0.1, 0);
+                leftArm.position.set(-1.05, 0, 0);
                 group.add(leftArm);
 
                 const rightArm = new THREE.Mesh(armGeo, shadowMat);
-                rightArm.position.set(1.1, 0.1, 0);
+                rightArm.position.set(1.05, 0, 0);
                 group.add(rightArm);
 
-                const legGeo = new THREE.BoxGeometry(0.65, 2.0, 0.65);
+                const legGeo = new THREE.BoxGeometry(0.7, 2.1, 0.7);
                 const leftLeg = new THREE.Mesh(legGeo, shadowMat);
-                leftLeg.position.set(-0.38, -1.9, 0);
+                leftLeg.position.set(-0.35, -2.1, 0);
                 group.add(leftLeg);
 
                 const rightLeg = new THREE.Mesh(legGeo, shadowMat);
-                rightLeg.position.set(0.38, -1.9, 0);
+                rightLeg.position.set(0.35, -2.1, 0);
                 group.add(rightLeg);
 
             } else {
@@ -2445,16 +2445,16 @@
                 const headGeo = new THREE.BoxGeometry(1.4, 1.4, 1.4);
                 setCubeUVs(headGeo, 0, 0, 8, 8, 8);
                 const head = new THREE.Mesh(headGeo, skinMat);
-                head.position.y = 1.8;
+                head.position.y = 1.75;
                 group.add(head);
 
-                const torsoGeo = new THREE.BoxGeometry(1.4, 2.0, 0.7);
+                const torsoGeo = new THREE.BoxGeometry(1.4, 2.1, 0.7);
                 setCubeUVs(torsoGeo, 16, 16, 8, 12, 4);
                 const torso = new THREE.Mesh(torsoGeo, skinMat);
-                torso.position.y = 0.1;
+                torso.position.y = 0;
                 group.add(torso);
 
-                const leftArmGeo = new THREE.BoxGeometry(0.65, 2.0, 0.65);
+                const leftArmGeo = new THREE.BoxGeometry(0.7, 2.1, 0.7);
                 if (isModern) {
                     setCubeUVs(leftArmGeo, 32, 48, 4, 12, 4);
                 } else {
@@ -2462,30 +2462,30 @@
                 }
                 const leftArm = new THREE.Mesh(leftArmGeo, skinMat);
                 leftArm.name = "leftArm";
-                leftArm.position.set(-1.1, 0.1, 0);
+                leftArm.position.set(-1.05, 0, 0);
                 group.add(leftArm);
 
-                const rightArmGeo = new THREE.BoxGeometry(0.65, 2.0, 0.65);
+                const rightArmGeo = new THREE.BoxGeometry(0.7, 2.1, 0.7);
                 setCubeUVs(rightArmGeo, 40, 16, 4, 12, 4);
                 const rightArm = new THREE.Mesh(rightArmGeo, skinMat);
                 rightArm.name = "rightArm";
-                rightArm.position.set(1.1, 0.1, 0);
+                rightArm.position.set(1.05, 0, 0);
                 group.add(rightArm);
 
-                const leftLegGeo = new THREE.BoxGeometry(0.65, 2.0, 0.65);
+                const leftLegGeo = new THREE.BoxGeometry(0.7, 2.1, 0.7);
                 if (isModern) {
                     setCubeUVs(leftLegGeo, 16, 48, 4, 12, 4);
                 } else {
                     setCubeUVs(leftLegGeo, 0, 16, 4, 12, 4);
                 }
                 const leftLeg = new THREE.Mesh(leftLegGeo, skinMat);
-                leftLeg.position.set(-0.38, -1.9, 0);
+                leftLeg.position.set(-0.35, -2.1, 0);
                 group.add(leftLeg);
 
-                const rightLegGeo = new THREE.BoxGeometry(0.65, 2.0, 0.65);
+                const rightLegGeo = new THREE.BoxGeometry(0.7, 2.1, 0.7);
                 setCubeUVs(rightLegGeo, 0, 16, 4, 12, 4);
                 const rightLeg = new THREE.Mesh(rightLegGeo, skinMat);
-                rightLeg.position.set(0.38, -1.9, 0);
+                rightLeg.position.set(0.35, -2.1, 0);
                 group.add(rightLeg);
 
                 // --- 2e COUCHE (overlay) : cheveux/casque, veste, manches, pantalon.
@@ -2512,14 +2512,14 @@
                     if (name) mesh.name = name;
                     group.add(mesh);
                 };
-                const G = 1.06;   // léger grossissement (la 2e couche enveloppe la 1re)
-                addOverlay(1.4 * G, 1.4 * G, 1.4 * G, 32, 0, 8, 8, 8, [0, 1.8, 0]);
+                const G = 1.035;   // léger grossissement (la 2e couche enveloppe la 1re)
+                addOverlay(1.4 * G, 1.4 * G, 1.4 * G, 32, 0, 8, 8, 8, [0, 1.75, 0]);
                 if (isModern) {
-                    addOverlay(1.4 * G, 2.0 * G, 0.7 * G, 16, 32, 8, 12, 4, [0, 0.1, 0]);
-                    addOverlay(0.65 * G, 2.0 * G, 0.65 * G, 48, 48, 4, 12, 4, [-1.1, 0.1, 0], "leftArmOv");
-                    addOverlay(0.65 * G, 2.0 * G, 0.65 * G, 40, 32, 4, 12, 4, [1.1, 0.1, 0], "rightArmOv");
-                    addOverlay(0.65 * G, 2.0 * G, 0.65 * G, 0, 48, 4, 12, 4, [-0.38, -1.9, 0]);
-                    addOverlay(0.65 * G, 2.0 * G, 0.65 * G, 0, 32, 4, 12, 4, [0.38, -1.9, 0]);
+                    addOverlay(1.4 * G, 2.1 * G, 0.7 * G, 16, 32, 8, 12, 4, [0, 0, 0]);
+                    addOverlay(0.7 * G, 2.1 * G, 0.7 * G, 48, 48, 4, 12, 4, [-1.05, 0, 0], "leftArmOv");
+                    addOverlay(0.7 * G, 2.1 * G, 0.7 * G, 40, 32, 4, 12, 4, [1.05, 0, 0], "rightArmOv");
+                    addOverlay(0.7 * G, 2.1 * G, 0.7 * G, 0, 48, 4, 12, 4, [-0.35, -2.1, 0]);
+                    addOverlay(0.7 * G, 2.1 * G, 0.7 * G, 0, 32, 4, 12, 4, [0.35, -2.1, 0]);
                 }
             }
         }
@@ -2756,7 +2756,7 @@
             }
             const target = skinCache[activeSlotIndex];
             if (target && target.isAccount) {
-                showToast("Choisis un autre slot : celui-ci affiche le skin actuel de ton compte.", "info");
+                showToast("L'emplacement 1 conserve le skin de ton compte : importe dans le 2 ou le 3.", "info");
                 return;
             }
             const input = document.createElement('input');
@@ -2765,12 +2765,29 @@
             input.onchange = function () {
                 const file = (input.files || [])[0];
                 if (!file) return;
-                const slotNumber = activeSlotIndex + 1;   // slot 1 = skin d'origine
+                const slotIndex = activeSlotIndex;
+                const slotNumber = slotIndex + 1;
+                // Importer sur l'emplacement PORTÉ remplace aussi le skin du
+                // compte : sinon le launcher afficherait un skin que le compte
+                // n'a pas. On enchaîne donc import -> application.
+                const wasActive = !!(target && target.isActive);
                 fileToBase64(file).then(function (b64) {
                     return lami.call('importSkin', { slot: slotNumber, base64: b64 }).then(function (r) {
-                        applySkinToSlot(activeSlotIndex, r.file, b64, r.sha256);
-                        markActiveSkinSlot();   // l'import peut correspondre au skin porté
-                        showToast(`Skin importé dans l'emplacement ${slotNumber}.`, "success");
+                        applySkinToSlot(slotIndex, r.file, b64, r.sha256);
+                        markActiveSkinSlot();
+                        if (!wasActive) {
+                            showToast(`Skin importé dans l'emplacement ${slotNumber}.`, "success");
+                            return;
+                        }
+                        showToast("Skin importé — application au compte…", "info");
+                        return lami.call('applySkin',
+                                         { file: r.file, variant: skinCache[slotIndex].variant || 'classic' },
+                                         120000).then(function () {
+                            accountSkinSha = r.sha256 || '';
+                            markActiveSkinSlot();
+                            refreshAccountSkinTexture();
+                            showToast("Skin importé et appliqué à ton compte !", "success");
+                        });
                     });
                 }).catch(function (err) {
                     showToast("Import échoué : " + (err.message || err), "error");

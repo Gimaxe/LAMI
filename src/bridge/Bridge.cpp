@@ -536,6 +536,26 @@ QString skinsDir()
     QDir().mkpath(p);
     return p;
 }
+
+// Première utilisation : les emplacements 2 et 3 sont pré-remplis avec le skin
+// par défaut livré avec l'app (web/assets/default-skin.png). Ensuite ce sont de
+// vrais fichiers skin-N.png que le joueur remplace à sa guise — plus de cas
+// « emplacement vide » à gérer.
+void ensureDefaultSkins()
+{
+    QString src = QDir(QCoreApplication::applicationDirPath())
+                      .filePath("web/assets/default-skin.png");
+    if (!QFileInfo::exists(src))   // exécution depuis l'arbre de sources (dev)
+        src = QDir(QCoreApplication::applicationDirPath())
+                  .filePath("../web/assets/default-skin.png");
+    if (!QFileInfo::exists(src))
+        return;
+    for (int slot : {2, 3}) {
+        const QString dest = QDir(skinsDir()).filePath(QStringLiteral("skin-%1.png").arg(slot));
+        if (!QFileInfo::exists(dest))
+            QFile::copy(src, dest);
+    }
+}
 // Ouvre un dossier dans l'explorateur de fichiers de l'OS.
 void openInExplorer(const QString &path)
 {
@@ -612,6 +632,7 @@ void Bridge::getAccountSkin(int id)
 // démarrage, sans dépendre de chemins file:// (petits fichiers, ~quelques Ko).
 void Bridge::listSkins(int id)
 {
+    ensureDefaultSkins();   // pré-remplit les emplacements 2 et 3 au 1er lancement
     QJsonArray arr;
     const QDir d(skinsDir());
     for (const QFileInfo &fi : d.entryInfoList({"skin-*.png"}, QDir::Files, QDir::Name)) {
