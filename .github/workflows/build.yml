@@ -137,6 +137,11 @@ jobs:
           cd artifacts/LAMI-windows && zip -r ../../LAMI-windows-v${{ steps.ver.outputs.version }}.zip . && cd ../..
           cp artifacts/LAMI-linux/LAMI-linux.tar.gz LAMI-linux-v${{ steps.ver.outputs.version }}.tar.gz
           cp artifacts/LAMI-windows-setup/*.exe . || true
+          # Copies à NOM FIXE : permettent des liens de téléchargement permanents
+          # (…/releases/latest/download/LAMI-Setup.exe) utilisés par le README.
+          cp LAMI-Setup-v*.exe LAMI-Setup.exe || true
+          cp LAMI-windows-v*.zip LAMI-windows.zip
+          cp LAMI-linux-v*.tar.gz LAMI-linux.tar.gz
 
       - name: Créer / mettre à jour la Release
         uses: softprops/action-gh-release@v2
@@ -147,3 +152,6 @@ jobs:
             LAMI-Setup-v*.exe
             LAMI-windows-v*.zip
             LAMI-linux-v*.tar.gz
+            LAMI-Setup.exe
+            LAMI-windows.zip
+            LAMI-linux.tar.gz
