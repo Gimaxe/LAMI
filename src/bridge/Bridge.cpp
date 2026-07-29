@@ -649,7 +649,11 @@ void Bridge::importSkin(int id, const QJsonObject &params)
     QFile f(dest);
     if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { replyError(id, "Écriture impossible."); return; }
     f.write(png);
-    replyOk(id, QJsonObject{{"file", name}, {"slot", slot}, {"path", dest}});
+    // Empreinte renvoyée : l'UI peut savoir tout de suite si ce skin est celui
+    // porté par le compte (sans relire toute la bibliothèque).
+    replyOk(id, QJsonObject{{"file", name}, {"slot", slot}, {"path", dest},
+                            {"sha256", QString::fromLatin1(
+                                QCryptographicHash::hash(png, QCryptographicHash::Sha256).toHex())}});
 }
 
 // Télécharge le skin ACTUEL du compte dans un emplacement de la bibliothèque
@@ -675,7 +679,9 @@ void Bridge::saveAccountSkinToSlot(int id, const QJsonObject &params)
         if (!f.open(QIODevice::WriteOnly | QIODevice::Truncate)) { replyError(id, "Écriture impossible."); return; }
         f.write(png);
         replyOk(id, QJsonObject{{"file", name}, {"slot", slot},
-                                {"base64", QString::fromLatin1(png.toBase64())}});
+                                {"base64", QString::fromLatin1(png.toBase64())},
+                                {"sha256", QString::fromLatin1(
+                                    QCryptographicHash::hash(png, QCryptographicHash::Sha256).toHex())}});
     });
 }
 

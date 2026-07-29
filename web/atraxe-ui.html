@@ -1317,7 +1317,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.62.0";
+        const LAMI_VERSION = "0.63.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1860,8 +1860,11 @@
             document.getElementById('current-tab-title').innerText = headerTitles[tabName] || "Launcher Atraxe";
 
             // S'assurer que le visualiseur 3D se redimensionne proprement si on va sur l'onglet Skins
-            if (tabName === 'skins' && renderer3D) {
-                setTimeout(onWindowResize3D, 50);
+            if (tabName === 'skins') {
+                if (renderer3D) setTimeout(onWindowResize3D, 50);
+                // Relit l'état réel du compte à chaque ouverture : un skin changé
+                // ailleurs entre-temps est ainsi détecté (et proposé).
+                refreshAccountSkinState();
             }
 
             if (tabName === 'mes-publications') {
@@ -2031,15 +2034,7 @@
             // Sauvegarde du skin d'ORIGINE dès la connexion (skin-1.png, écrit une
             // seule fois), puis restauration des emplacements depuis les fichiers :
             // le slot 1 redevient le skin d'origine, les slots 2-3 leurs imports.
-            if (window.lami && window.lami.connected) {
-                lami.call('getAccountSkin').then(function (r) {
-                    if (r && r.variant) slot.variant = (r.variant || 'CLASSIC').toLowerCase();
-                    accountSkinSha = (r && r.sha256) || '';
-                    accountSkinUrl = (r && r.url) || '';
-                    accountSkinDataUrl = (r && r.base64) ? 'data:image/png;base64,' + r.base64 : '';
-                    restoreSkinSlots();
-                }).catch(function () {});
-            }
+            refreshAccountSkinState();
         }
 
         function doMicrosoftLogin() {
@@ -2349,11 +2344,12 @@
                 texture.minFilter = THREE.NearestFilter;
                 callback(texture, true);
             };
-            // Accepte une URL complète (data:, http…) ou un identifiant Minecraft
-            // (uuid/pseudo) — dans ce dernier cas on passe par mineatar.
-            img.src = /^(data:|https?:)/.test(username)
-                ? username
-                : `https://api.mineatar.io/skin/${username}`;
+            // Une SOURCE D'IMAGE (data:, http(s):, ou chemin de fichier local
+            // comme « assets/default-skin.png ») est utilisée telle quelle ; seul
+            // un identifiant Minecraft nu (uuid/pseudo) passe par mineatar.
+            const isImageSource = /^(data:|https?:|\.{0,2}\/)/.test(username)
+                                  || /\.(png|jpe?g)(\?|$)/i.test(username);
+            img.src = isImageSource ? username : `https://api.mineatar.io/skin/${username}`;
         }
 
         // Skin affiché pour un slot vide : le PNG assets/default-skin.png s'il
@@ -2682,8 +2678,7 @@
             hideSkinImportModal();
             lami.call('saveAccountSkinToSlot', { slot: index + 1, url: accountSkinUrl })
                 .then(function (r) {
-                    applySkinToSlot(index, r.file, r.base64);
-                    skinCache[index].sha256 = accountSkinSha;
+                    applySkinToSlot(index, r.file, r.base64, r.sha256 || accountSkinSha);
                     markActiveSkinSlot();
                     showToast(`Skin du compte enregistré dans l'emplacement ${index + 1}.`, "success");
                 })
@@ -2773,7 +2768,8 @@
                 const slotNumber = activeSlotIndex + 1;   // slot 1 = skin d'origine
                 fileToBase64(file).then(function (b64) {
                     return lami.call('importSkin', { slot: slotNumber, base64: b64 }).then(function (r) {
-                        applySkinToSlot(activeSlotIndex, r.file, b64);
+                        applySkinToSlot(activeSlotIndex, r.file, b64, r.sha256);
+                        markActiveSkinSlot();   // l'import peut correspondre au skin porté
                         showToast(`Skin importé dans l'emplacement ${slotNumber}.`, "success");
                     });
                 }).catch(function (err) {
@@ -2785,7 +2781,7 @@
 
         // Renseigne un slot avec les octets d'un skin (import ou restauration au
         // démarrage) et met à jour le rendu 3D.
-        function applySkinToSlot(index, fileName, base64) {
+        function applySkinToSlot(index, fileName, base64, sha256) {
             const slot = skinCache[index];
             if (!slot) return;
             slot.fileName = fileName;
@@ -2793,6 +2789,7 @@
             slot.empty = false;
             slot.uuid = '';
             slot.dataUrl = 'data:image/png;base64,' + base64;
+            if (sha256) slot.sha256 = sha256;   // permet de repérer le skin porté
             if (typeof char3DModels !== 'undefined' && char3DModels[index]) {
                 loadMinecraftSkinTexture(slot.dataUrl, function (texture, is64x64) {
                     slot.texture = texture;
@@ -2829,6 +2826,20 @@
             return found;
         }
 
+        // Relit le skin porté par le compte (empreinte + aperçu) puis réévalue
+        // quel emplacement est actif. Appelé à la connexion ET à chaque ouverture
+        // de l'onglet Skins.
+        function refreshAccountSkinState() {
+            if (!(window.lami && window.lami.connected && isMicrosoftAuthed)) return;
+            lami.call('getAccountSkin').then(function (r) {
+                accountSkinSha = (r && r.sha256) || '';
+                accountSkinUrl = (r && r.url) || '';
+                accountSkinDataUrl = (r && r.base64) ? 'data:image/png;base64,' + r.base64 : '';
+                if (r && r.variant && skinCache[0]) skinCache[0].variant = (r.variant || 'CLASSIC').toLowerCase();
+                restoreSkinSlots();
+            }).catch(function () {});
+        }
+
         // Restaure les emplacements depuis les fichiers skin-N.png du dossier des
         // skins : un skin importé reste en place après redémarrage du launcher.
         function restoreSkinSlots() {
@@ -2838,8 +2849,7 @@
                     const index = s.slot - 1;      // slot 1 -> index 0
                     if (index < 0 || index >= skinCache.length) return;
                     if (!s.base64) return;
-                    applySkinToSlot(index, s.file, s.base64);
-                    skinCache[index].sha256 = s.sha256 || '';
+                    applySkinToSlot(index, s.file, s.base64, s.sha256);
                     // Le slot 1 conserve son identité « skin d'origine » : on peut
                     // y revenir après avoir essayé un autre skin.
                     if (index === 0) {
