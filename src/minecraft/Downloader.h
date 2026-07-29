@@ -22,6 +22,7 @@ struct DownloadTask {
     qint64  size = 0;
     // En-têtes HTTP additionnels (ex. Authorization Bearer pour le repo privé).
     QVector<QPair<QByteArray, QByteArray>> headers;
+    int     attempts = 0;  // tentatives déjà effectuées (voir kMaxAttempts)
 };
 
 // Téléchargeur avec vérification SHA1 et parallélisme limité.
@@ -47,6 +48,11 @@ public:
     static QString hashFile(const QString &path, QCryptographicHash::Algorithm algo);
     static QString sha1File(const QString &path);  // raccourci SHA1
 
+    // Nombre total d'essais par fichier. Sur ~5000 fichiers, un seul aléa réseau
+    // suffisait à faire échouer toute l'installation (« installation incomplète »
+    // qui réussissait au 2e clic) : chaque fichier est donc réessayé.
+    static constexpr int kMaxAttempts = 3;
+
 signals:
     void progress(int done, int total);
     void progressBytes(qint64 doneBytes, qint64 totalBytes);
@@ -57,6 +63,8 @@ signals:
 private:
     void pump();
     void startOne(const DownloadTask &task);
+    // Replanifie un fichier après un échec transitoire ; false si plus d'essais.
+    bool scheduleRetry(const DownloadTask &task);
     void onOneDone(bool ok, const QString &dest, const QString &reason, qint64 size);
     static bool alreadyValid(const DownloadTask &task);
 

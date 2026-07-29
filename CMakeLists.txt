@@ -156,6 +156,11 @@ if(LAMI_BUILD_TESTS)
     target_include_directories(lami_test_minecraft PRIVATE src)
     target_link_libraries(lami_test_minecraft PRIVATE Qt${QT_VERSION_MAJOR}::Network)
 
+    # Nouvelles tentatives de téléchargement (serveur instable simulé).
+    qt_add_executable(lami_test_retry tests/test_retry.cpp src/minecraft/Downloader.cpp)
+    target_link_libraries(lami_test_retry PRIVATE Qt6::Core Qt6::Network)
+    target_include_directories(lami_test_retry PRIVATE src)
+
     qt_add_executable(lami_test_download
         tests/test_download.cpp
         src/minecraft/VersionInfo.cpp

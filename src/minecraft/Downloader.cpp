@@ -7,6 +7,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkReply>
 #include <QNetworkRequest>
+#include <QTimer>
 #include <QUrl>
 
 namespace lami {
@@ -95,6 +96,23 @@ void Downloader::pump()
     }
 }
 
+// Remet le fichier en file après une courte pause (300 ms, 600 ms…) tant qu'il
+// reste des essais. Le compteur global n'est PAS incrémenté : la tâche n'est ni
+// réussie ni définitivement échouée tant qu'on réessaie.
+bool Downloader::scheduleRetry(const DownloadTask &task)
+{
+    if (m_aborted || task.attempts >= kMaxAttempts)
+        return false;
+    DownloadTask next = task;
+    QTimer::singleShot(300 * next.attempts, this, [this, next]() {
+        if (m_aborted)
+            return;
+        m_queue.enqueue(next);
+        pump();
+    });
+    return true;
+}
+
 void Downloader::startOne(const DownloadTask &task)
 {
     QNetworkRequest req{QUrl(task.url)};
@@ -106,7 +124,10 @@ void Downloader::startOne(const DownloadTask &task)
 
     QNetworkReply *reply = m_net->get(req);
     m_inFlight.append(reply);
-    connect(reply, &QNetworkReply::finished, this, [this, reply, task]() {
+    // La tâche porte le compteur d'essais : incrémenté ici, avant l'envoi.
+    DownloadTask attempt = task;
+    attempt.attempts += 1;
+    connect(reply, &QNetworkReply::finished, this, [this, reply, attempt]() {
         reply->deleteLater();
         m_inFlight.removeOne(reply);
         --m_active;
@@ -114,37 +135,42 @@ void Downloader::startOne(const DownloadTask &task)
         if (m_aborted)
             return;   // annulé : on ne compte plus rien, l'appelant a repris la main
 
+        // Échec réseau (coupure, délai dépassé, 5xx…) : on réessaie avant de
+        // déclarer le fichier perdu — c'est ce qui rendait une installation
+        // « incomplète » alors qu'un simple second essai suffisait.
         if (reply->error() != QNetworkReply::NoError) {
-            onOneDone(false, task.dest, reply->errorString(), task.size);
+            if (!scheduleRetry(attempt))
+                onOneDone(false, attempt.dest, reply->errorString(), attempt.size);
             pump();
             return;
         }
 
         const QByteArray data = reply->readAll();
 
-        QDir().mkpath(QFileInfo(task.dest).absolutePath());
-        QFile out(task.dest);
+        QDir().mkpath(QFileInfo(attempt.dest).absolutePath());
+        QFile out(attempt.dest);
         if (!out.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
-            onOneDone(false, task.dest, "écriture impossible", task.size);
+            onOneDone(false, attempt.dest, "écriture impossible", attempt.size);
             pump();
-            return;
+            return;   // problème disque : réessayer n'y changerait rien
         }
         out.write(data);
         out.close();
 
-        // Vérification d'intégrité.
-        if (!task.expectedHash.isEmpty()) {
+        // Vérification d'intégrité (transfert tronqué/corrompu → nouvel essai).
+        if (!attempt.expectedHash.isEmpty()) {
             const QString got = QString::fromLatin1(
-                QCryptographicHash::hash(data, task.algo).toHex());
-            if (got.compare(task.expectedHash, Qt::CaseInsensitive) != 0) {
-                QFile::remove(task.dest);  // ne pas garder un fichier corrompu
-                onOneDone(false, task.dest, "SHA1 non conforme", task.size);
+                QCryptographicHash::hash(data, attempt.algo).toHex());
+            if (got.compare(attempt.expectedHash, Qt::CaseInsensitive) != 0) {
+                QFile::remove(attempt.dest);  // ne pas garder un fichier corrompu
+                if (!scheduleRetry(attempt))
+                    onOneDone(false, attempt.dest, "empreinte non conforme", attempt.size);
                 pump();
                 return;
             }
         }
 
-        onOneDone(true, task.dest, {}, task.size);
+        onOneDone(true, attempt.dest, {}, attempt.size);
         pump();
     });
 }
