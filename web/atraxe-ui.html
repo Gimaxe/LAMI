@@ -89,29 +89,6 @@
             box-shadow: 0 0 10px rgb(var(--brand-500) / .35);
         }
         .lami-check:checked::before { transform: scale(1); }
-
-        /* Champ numérique (port) : les flèches natives du navigateur jurent avec
-           le reste de l'interface — on les masque et on fournit nos propres
-           boutons (.lami-stepper). */
-        .lami-number::-webkit-outer-spin-button,
-        .lami-number::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
-        .lami-number { -moz-appearance: textfield; appearance: textfield; }
-        .lami-stepper {
-            display: flex; align-items: center; justify-content: center;
-            width: 1.6rem; height: 1.15rem;
-            border: 1px solid rgb(64 64 64 / .8);
-            border-radius: 0.4rem;
-            background: rgb(23 23 23 / .9);
-            color: rgb(163 163 163);
-            cursor: pointer; user-select: none;
-            transition: background .15s ease, color .15s ease, border-color .15s ease;
-        }
-        .lami-stepper:hover {
-            background: rgb(var(--brand-500) / .15);
-            border-color: rgb(var(--brand-500) / .5);
-            color: rgb(var(--brand-400));
-        }
-        .lami-stepper:active { transform: translateY(1px); }
         /* Fond d'écran optionnel de la zone principale (droite). */
         #main-content { position: relative; }
         #main-bg {
@@ -604,27 +581,11 @@
                         <!-- IP / Sous-domaine -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Adresse IP ou Sous-domaine</label>
-                            <input type="text" id="pub-ip" required placeholder="ex: play.atraxe.net" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
+                            <input type="text" id="pub-ip" required placeholder="ex : play.atraxe.net (ou play.atraxe.net:25569)" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
                         </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
-                        <!-- Port du Serveur -->
-                        <div class="flex flex-col gap-1.5">
-                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Port du serveur</label>
-                                                        <div class="relative">
-                                <input type="number" id="pub-port" value="25565" min="1" max="65535" class="lami-number w-full bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800 rounded-xl px-4 py-3 pr-11 text-sm text-white outline-none transition">
-                                <div class="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-0.5">
-                                    <button type="button" class="lami-stepper" onclick="stepPort('pub-port', 1)" title="Augmenter">
-                                        <i data-lucide="chevron-up" class="w-3 h-3"></i>
-                                    </button>
-                                    <button type="button" class="lami-stepper" onclick="stepPort('pub-port', -1)" title="Diminuer">
-                                        <i data-lucide="chevron-down" class="w-3 h-3"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- Version de Minecraft (liste Mojang + saisie manuelle) -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Version de Minecraft</label>
@@ -787,27 +748,11 @@
                         <!-- IP / Sous-domaine -->
                         <div class="flex flex-col gap-1.5">
                             <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Adresse IP ou Sous-domaine</label>
-                            <input type="text" id="edit-ip" required placeholder="ex: play.atraxe.net" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
+                            <input type="text" id="edit-ip" required placeholder="ex : play.atraxe.net (ou play.atraxe.net:25569)" class="bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800 rounded-xl px-4 py-3 text-sm text-white outline-none transition">
                         </div>
                     </div>
 
                     <div class="grid grid-cols-1 md:grid-cols-3 gap-5">
-                        <!-- Port du Serveur -->
-                        <div class="flex flex-col gap-1.5">
-                            <label class="text-xs font-bold text-neutral-400 uppercase tracking-wide">Port du serveur</label>
-                                                        <div class="relative">
-                                <input type="number" id="edit-port" value="25565" min="1" max="65535" class="lami-number w-full bg-dark-input hover:bg-neutral-850 focus:bg-neutral-800 focus:border-brand border border-neutral-800 rounded-xl px-4 py-3 pr-11 text-sm text-white outline-none transition">
-                                <div class="absolute right-2 top-1/2 -translate-y-1/2 flex flex-col gap-0.5">
-                                    <button type="button" class="lami-stepper" onclick="stepPort('edit-port', 1)" title="Augmenter">
-                                        <i data-lucide="chevron-up" class="w-3 h-3"></i>
-                                    </button>
-                                    <button type="button" class="lami-stepper" onclick="stepPort('edit-port', -1)" title="Diminuer">
-                                        <i data-lucide="chevron-down" class="w-3 h-3"></i>
-                                    </button>
-                                </div>
-                            </div>
-                        </div>
-
                         <!-- Version de Minecraft (même source que la publication :
                              liste Mojang chargée dynamiquement + saisie libre) -->
                         <div class="flex flex-col gap-1.5">
@@ -1364,7 +1309,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.67.0";
+        const LAMI_VERSION = "0.68.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1485,7 +1430,6 @@
                 id: 'atraxe-smp',
                 name: 'Atraxe SMP',
                 ip: 'smp.atraxe.net',
-                port: '25565',
                 version: '1.20.1',
                 loader: 'Forge (v47.2.0)',
                 creator: 'Atraxe Dev Team',
@@ -1500,7 +1444,6 @@
                 id: 'anarchie',
                 name: 'Atraxe Faction Hardcore',
                 ip: 'anarchie.atraxe.net',
-                port: '25565',
                 version: '1.19.4',
                 loader: 'Fabric (v0.14.22)',
                 creator: 'Hexa_Miner',
@@ -1515,7 +1458,6 @@
                 id: 'creative',
                 name: 'Zone Créative LAMI',
                 ip: 'create.atraxe.net',
-                port: '25569',
                 version: '1.20.1',
                 loader: 'Vanilla',
                 creator: 'Valkyrie_91',
@@ -1534,7 +1476,6 @@
                 id: 'pixelmon',
                 name: 'Atraxe Pixelmon Adventure',
                 ip: 'pixelmon.atraxe.net',
-                port: '25565',
                 version: '1.16.5',
                 loader: 'Forge (v36.2.34)',
                 creator: 'Atraxe Pixel Team',
@@ -1549,7 +1490,6 @@
                 id: 'skyblock',
                 name: 'Atraxe Skyblock Evolution',
                 ip: 'skyblock.atraxe.net',
-                port: '25567',
                 version: '1.20.1',
                 loader: 'Fabric (v0.15.3)',
                 creator: 'AdminLAMI',
@@ -3062,7 +3002,6 @@
                 id: s.id || ('srv-' + Date.now()),
                 name: s.name || 'Serveur Minecraft',
                 ip: s.ip || '',
-                port: s.port || '25565',
                 version: s.version || '1.20.1',
                 loader: s.loader || 'Vanilla',
                 creator: s.creator || 'Inconnu',
@@ -3802,15 +3741,6 @@
         // --- SIMULATION PUBLICATION DU SERVEUR ---
         // Remplit le <datalist> associé à un champ éditable : les valeurs sont des
         // suggestions ; l'utilisateur peut effacer et taper directement sa propre valeur.
-        // Boutons +/- du champ port (les flèches natives sont masquées en CSS).
-        function stepPort(inputId, delta) {
-            const inp = document.getElementById(inputId);
-            if (!inp) return;
-            const v = parseInt(inp.value, 10);
-            const next = (isNaN(v) ? 25565 : v) + delta;
-            inp.value = Math.min(65535, Math.max(1, next));
-        }
-
         function fillVersionSelect(inputId, versions) {
             const dl = document.getElementById(inputId + '-list');
             if (!dl) return;
@@ -3915,7 +3845,6 @@
 
             const srvName = document.getElementById('pub-name').value;
             const srvIp = document.getElementById('pub-ip').value;
-            const srvPort = document.getElementById('pub-port').value;
             const srvVersion = selectedVersion('pub-version');
             const srvLoader = document.getElementById('pub-loader').value;
             const srvLoaderVersion = selectedVersion('pub-loader-version');
@@ -3931,7 +3860,7 @@
             // Publication RÉELLE via le backend (les zips sont envoyés en octets).
             if (window.lami && window.lami.connected) {
                 publishServerReal({
-                    name: srvName, ip: srvIp, port: srvPort,
+                    name: srvName, ip: srvIp,
                     version: srvVersion, loader: srvLoader,
                     loaderVersion: srvLoaderVersion
                 }, { mods: modsFile, plugins: pFile, packs: tFile, shaders: sFile });
@@ -3975,7 +3904,6 @@
                         id: 'srv-' + Date.now(),
                         name: srvName,
                         ip: srvIp,
-                        port: srvPort,
                         version: srvVersion,
                         loader: srvLoader,
                         creator: 'Moi',
@@ -4054,7 +3982,7 @@
                 // Timeout long (30 min) : un gros modpack part en plusieurs lots
                 // vers le Worker — 30 s suffisaient pour du vanilla, pas au-delà.
                 return lami.call('publishServer', {
-                    name: meta.name, ip: meta.ip, port: meta.port,
+                    name: meta.name, ip: meta.ip,
                     version: meta.version, loader: meta.loader, loaderVersion: meta.loaderVersion || '',
                     modsZip: b64[0], pluginsZip: b64[1], packsZip: b64[2], shadersZip: b64[3]
                 }, 1800000);
@@ -4167,7 +4095,6 @@
             document.getElementById('edit-srv-real-id').value = srv.id;
             document.getElementById('edit-name').value = srv.name;
             document.getElementById('edit-ip').value = srv.ip;
-            document.getElementById('edit-port').value = srv.port || "25565";
             document.getElementById('edit-version').value = srv.version;
             
             // Trouver le bon loader dans la liste
@@ -4232,7 +4159,6 @@
                     id: srvId,
                     name: document.getElementById('edit-name').value,
                     ip: document.getElementById('edit-ip').value,
-                    port: document.getElementById('edit-port').value,
                     version: selectedVersion('edit-version'),
                     loader: document.getElementById('edit-loader').value,
                     loaderVersion: selectedVersion('edit-loader-version')
@@ -4261,7 +4187,6 @@
             if (srv) {
                 srv.name = document.getElementById('edit-name').value;
                 srv.ip = document.getElementById('edit-ip').value;
-                srv.port = document.getElementById('edit-port').value;
                 srv.version = document.getElementById('edit-version').value;
                 srv.loader = document.getElementById('edit-loader').value;
 

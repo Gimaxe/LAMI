@@ -32,7 +32,6 @@ struct ServerInfo {
     QString id;                // identifiant du serveur (nom du fichier json)
     QString name;              // nom affiché
     QString address;           // IP / sous-domaine à rejoindre
-    int     port = 25565;      // port du serveur (25565 par défaut)
     QString minecraftVersion;  // ex. "1.20.1"
     QString loader;            // "vanilla" | "fabric" | "quilt" | "forge" | "neoforge"
     QString loaderVersion;     // ex. "0.15.11" (vide si vanilla)
