@@ -3,6 +3,7 @@
 // enfant. L'UI (JS) se connecte au backend via ws://127.0.0.1:<port>.
 
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 
 #include "webview.h"
@@ -153,6 +154,51 @@ std::string backendDiagnostic(const std::string &dir)
     return missing;
 }
 
+// Supprime une entrée de menu PÉRIMÉE laissée par une ancienne installation
+// « portable » dans le dossier personnel. Ce dossier étant PRIORITAIRE sur
+// /usr/share, un lami.desktop dont l'Exec n'existe plus (application déplacée
+// ou désinstallée) masque celui du paquet : le système écarte l'entrée
+// invalide et LAMI disparaît alors du menu et du sélecteur de fenêtres.
+// On ne touche qu'à un fichier créé par notre propre installeur, et seulement
+// si sa cible est réellement absente.
+void cleanStaleDesktopEntry()
+{
+    const char *home = getenv("HOME");
+    if (!home)
+        return;
+    const std::string path = std::string(home) + "/.local/share/applications/lami.desktop";
+    FILE *f = fopen(path.c_str(), "r");
+    if (!f)
+        return;
+
+    std::string exec;
+    char line[1024];
+    while (fgets(line, sizeof(line), f)) {
+        std::string s(line);
+        if (s.rfind("Exec=", 0) == 0) {
+            exec = s.substr(5);
+            while (!exec.empty() && (exec.back() == '\n' || exec.back() == ' '))
+                exec.pop_back();
+            const auto sp = exec.find(' ');       // ignore les arguments
+            if (sp != std::string::npos) exec = exec.substr(0, sp);
+            break;
+        }
+    }
+    fclose(f);
+
+    // Commande sans chemin (« lami ») : c'est l'entrée du paquet, on n'y touche pas.
+    if (exec.empty() || exec.front() != '/')
+        return;
+    if (access(exec.c_str(), X_OK) == 0)
+        return;                                   // cible valide : entrée légitime
+
+    if (remove(path.c_str()) == 0) {
+        const std::string cmd = "update-desktop-database '" + std::string(home) +
+                                "/.local/share/applications' >/dev/null 2>&1";
+        (void) system(cmd.c_str());
+    }
+}
+
 // Page d'erreur écrite dans un FICHIER puis chargée en file://. Une data: URL
 // contenant espaces et accents non encodés s'affichait en page blanche sous
 // WebKitGTK — l'utilisateur ne voyait donc même pas le message.
@@ -202,6 +248,9 @@ int main()
 #endif
 
     const std::string dir = exeDir();
+#ifndef _WIN32
+    cleanStaleDesktopEntry();   // entrée de menu morte d'une ancienne install
+#endif
     // Port EFFECTIF du moteur (0 = il n'a pas démarré).
     const int backendPort = startBackend(dir);
 
