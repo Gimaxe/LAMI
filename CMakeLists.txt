@@ -328,6 +328,12 @@ if(UNIX AND NOT APPLE)
         BUILD_WITH_INSTALL_RPATH FALSE
         INSTALL_RPATH "$ORIGIN/lib"
         BUILD_RPATH "$ORIGIN/lib")
+    # --disable-new-dtags force un RPATH (et non un RUNPATH) : c'est essentiel,
+    # car seul le RPATH est HÉRITÉ par les dépendances transitives. Avec un
+    # RUNPATH, le binaire trouvait bien libQt6Core dans lib/, mais libQt6Core
+    # cherchait ensuite libb2 uniquement sur le système — absent sur une machine
+    # sans Qt, d'où « Le moteur de LAMI n'a pas démarré ».
+    target_link_options(lami_backend PRIVATE "-Wl,--disable-new-dtags")
 endif()
 
 # Stockage sécurisé du refresh token (module Secret) :

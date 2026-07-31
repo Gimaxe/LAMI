@@ -192,6 +192,10 @@ int main()
     // bureau d'afficher la bonne icône dans la barre des tâches.
     g_set_prgname("lami");
     g_set_application_name("LAMI");
+    // Sous X11, GTK dérive la CLASSE de fenêtre du nom du programme en le
+    // capitalisant (« Lami »), ce qui ne correspondrait pas au StartupWMClass
+    // du fichier .desktop. On la fixe explicitement.
+    gdk_set_program_class("lami");
 #endif
 
     const std::string dir = exeDir();

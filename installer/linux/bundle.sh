@@ -71,5 +71,36 @@ while [ ${#QUEUE[@]} -gt 0 ]; do
     done < <(collect_deps "$current")
 done
 
+# --- OpenSSL : chargé À LA DEMANDE (dlopen) par le greffon TLS, donc invisible
+# pour ldd et jamais copié par la collecte ci-dessus. Sans lui, aucun
+# téléchargement HTTPS ne fonctionne sur une machine sans OpenSSL.
+for soname in libssl.so.3 libcrypto.so.3; do
+    src="$(ldconfig -p 2>/dev/null | awk -v n="$soname" '$1==n {print $NF; exit}')"
+    [ -n "$src" ] && [ ! -f "$DIST/lib/$soname" ] && cp -L "$src" "$DIST/lib/"
+done
+
+# --- Contrôles : le paquet doit être réellement autonome -------------------
+# 1) Aucune dépendance non résolue (une lib absente de la machine de build
+#    n'aurait PAS été copiée : ldd ne donne pas de chemin pour un « not found »).
+if ldd "$DIST/lami_backend" 2>/dev/null | grep -q 'not found'; then
+    echo "ERREUR : dépendances non résolues sur la machine de build :" >&2
+    ldd "$DIST/lami_backend" | grep 'not found' >&2
+    exit 1
+fi
+# 2) RPATH et non RUNPATH : seul le RPATH est hérité par les dépendances
+#    transitives. Avec un RUNPATH, les libs DE Qt (libb2, icu…) seraient
+#    cherchées sur le système et le moteur ne démarrerait pas sans Qt installé.
+if ! readelf -d "$DIST/lami_backend" | grep -q '(RPATH)'; then
+    echo "ERREUR : lami_backend n'a pas de RPATH (RUNPATH non hérité)." >&2
+    readelf -d "$DIST/lami_backend" | grep -E 'RPATH|RUNPATH' >&2
+    exit 1
+fi
+# 3) Les dépendances de Qt doivent être résolues DANS le paquet.
+for lib in libb2.so.1 libicuuc.so libssl.so; do
+    if ! ls "$DIST/lib/" | grep -q "^${lib%%.so*}"; then
+        echo "AVERTISSEMENT : ${lib} absente du paquet." >&2
+    fi
+done
+
 echo "Paquet autonome prêt : $(ls "$DIST/lib" | wc -l) bibliothèque(s) embarquée(s)."
 ls "$DIST/lib" | sed 's/^/  /'
