@@ -32,15 +32,34 @@ rm -f "$APPDIR/install.sh"        # inutile dans un paquet géré par apt
 # --- Icônes dans le thème hicolor -----------------------------------------
 # Le nom de fichier « lami.png » est ce que cherchent le lanceur et la barre
 # des tâches (Icon=lami + StartupWMClass=lami).
+#
+# ATTENTION : un thème d'icônes exige que le fichier d'un dossier <N>x<N>
+# mesure RÉELLEMENT N pixels. Y déposer une copie du 256x256 produit des
+# entrées incohérentes que GTK écarte — d'où une icône générique. On ne
+# génère donc une taille que si l'on sait vraiment redimensionner.
 SRC_ICON="web/assets/lami-icon.png"
-for size in 256 128 64 48 32; do
+resize_icon() {   # <source> <taille> <destination> -> 0 si réellement redimensionné
+    if command -v convert >/dev/null 2>&1; then
+        convert "$1" -resize "${2}x${2}" "$3" 2>/dev/null && return 0
+    fi
+    python3 - "$1" "$2" "$3" <<'PY' 2>/dev/null && return 0
+import sys
+import gi
+gi.require_version("GdkPixbuf", "2.0")
+from gi.repository import GdkPixbuf
+src, size, dest = sys.argv[1], int(sys.argv[2]), sys.argv[3]
+pb = GdkPixbuf.Pixbuf.new_from_file(src)
+pb.scale_simple(size, size, GdkPixbuf.InterpType.BILINEAR).savev(dest, "png", [], [])
+PY
+    return 1
+}
+
+mkdir -p "$ROOT/usr/share/icons/hicolor/256x256/apps"
+cp "$SRC_ICON" "$ROOT/usr/share/icons/hicolor/256x256/apps/lami.png"   # taille native
+for size in 128 64 48 32; do
     dir="$ROOT/usr/share/icons/hicolor/${size}x${size}/apps"
     mkdir -p "$dir"
-    if command -v convert >/dev/null 2>&1 && [ "$size" != 256 ]; then
-        convert "$SRC_ICON" -resize "${size}x${size}" "$dir/lami.png"
-    else
-        cp "$SRC_ICON" "$dir/lami.png"
-    fi
+    resize_icon "$SRC_ICON" "$size" "$dir/lami.png" || rmdir -p --ignore-fail-on-non-empty "$dir"
 done
 
 # --- Lanceur en ligne de commande -----------------------------------------
@@ -121,6 +140,19 @@ gtk-update-icon-cache -f -t /usr/share/icons/hicolor >/dev/null 2>&1 || true
 update-desktop-database /usr/share/applications >/dev/null 2>&1 || true
 EOF
 chmod 755 "$ROOT/DEBIAN/postinst" "$ROOT/DEBIAN/postrm"
+
+# Contrôle : chaque icône doit mesurer exactement la taille de son dossier,
+# sinon le thème l'écarte et le bureau retombe sur une icône générique.
+for f in $(find "$ROOT/usr/share/icons" -name lami.png); do
+    expected="$(basename "$(dirname "$(dirname "$f")")" | cut -dx -f1)"
+    real="$(python3 -c "
+import struct,sys
+d=open('$f','rb').read(); print(struct.unpack('>II', d[16:24])[0])" 2>/dev/null || echo 0)"
+    if [ "$real" != "$expected" ]; then
+        echo "ERREUR : $f mesure ${real}px au lieu de ${expected}px." >&2
+        exit 1
+    fi
+done
 
 DEB="$OUT/LAMI_${VERSION}_amd64.deb"
 dpkg-deb --build --root-owner-group "$ROOT" "$DEB" >/dev/null
