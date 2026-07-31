@@ -15,6 +15,9 @@
 #include <sys/wait.h>
 #include <unistd.h>
 #include <gtk/gtk.h>   // icône de fenêtre (GtkWindow)
+#ifdef GDK_WINDOWING_WAYLAND
+#include <gdk/gdkwayland.h>   // app_id Wayland (icône de la barre des tâches)
+#endif
 #endif
 
 namespace {
@@ -242,6 +245,21 @@ int main()
     gtk_window_set_default_icon_name("lami");
     if (GtkWidget *win = static_cast<GtkWidget *>(w.window())) {
         gtk_window_set_icon_name(GTK_WINDOW(win), "lami");
+
+        // Sous WAYLAND (Ubuntu par défaut), le compositeur ne regarde ni le
+        // WM_CLASS ni l'icône posée sur la fenêtre : il identifie l'application
+        // par son app_id, qu'il relie ensuite à <app_id>.desktop pour en tirer
+        // l'icône. GTK ne le renseigne pas forcément depuis le nom du
+        // programme, d'où l'icône générique — on le pose donc explicitement.
+        gtk_widget_realize(win);
+        if (GdkWindow *gw = gtk_widget_get_window(win)) {
+#ifdef GDK_WINDOWING_WAYLAND
+            if (GDK_IS_WAYLAND_WINDOW(gw))
+                gdk_wayland_window_set_application_id(gw, "lami");
+#endif
+            (void) gw;
+        }
+
         // Repli si le thème ne connaît pas encore « lami » (exécution portable,
         // sans installation) : on charge le PNG livré avec l'app.
         if (!gtk_icon_theme_has_icon(gtk_icon_theme_get_default(), "lami"))
