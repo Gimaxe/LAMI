@@ -1291,13 +1291,20 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.77.0";
+        const LAMI_VERSION = "0.78.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
         let isMicrosoftAuthed = false;   // démarre DÉCONNECTÉ (l'auth réelle se fait au clic)
         let isPlaying = false;
         let isPublishing = false;
+        // UUID (sans tirets) du compte connecté : sert à n'afficher QUE ses
+        // propres publications dans l'onglet dédié.
+        let currentUserUuid = '';
+        function isOwnedByCurrentUser(srv) {
+            if (!srv || !currentUserUuid) return false;
+            return String(srv.owner || '').replace(/-/g, '').toLowerCase() === currentUserUuid;
+        }
         // Comportement au lancement du jeu (réglage « Fermeture du launcher »).
         let currentCloseBehavior = 'hide';
         function applyCloseBehavior() {
@@ -1595,6 +1602,7 @@
                 // une vraie connexion (pas de faux "connecté" avec écritures mortes).
                 lami.on('sessionExpired', function () {
                     isMicrosoftAuthed = false;
+                    currentUserUuid = '';
                     document.getElementById('player-name').innerText = "Non connecté";
                     document.getElementById('player-avatar').src =
                         "https://api.mineatar.io/face/00000000000000000000000000000000?scale=8";
@@ -1986,6 +1994,7 @@
         // Applique une session authentifiée (connexion normale OU silencieuse).
         function applyLoginSession(session) {
             isMicrosoftAuthed = true;
+            currentUserUuid = (session.uuid || '').replace(/-/g, '').toLowerCase();
             document.getElementById('player-name').innerText = session.name;
             document.getElementById('player-avatar').src =
                 `https://api.mineatar.io/face/${(session.uuid || '').replace(/-/g, '')}?scale=8`;
@@ -2076,6 +2085,7 @@
         function logout() {
             if (window.lami && window.lami.connected) lami.call('logout', {}).catch(function () {});
             isMicrosoftAuthed = false;
+            currentUserUuid = '';   // plus aucune publication considérée comme sienne
             document.getElementById('player-name').innerText = "Non connecté";
             document.getElementById('player-avatar').src =
                 "https://api.mineatar.io/face/00000000000000000000000000000000?scale=8";
@@ -4002,9 +4012,13 @@
             // Connecté au backend : on liste les VRAIS serveurs publiés (repo).
             // Sinon (page ouverte seule), on retombe sur les données de démo.
             const connected = window.lami && window.lami.connected;
+            // Seuls les serveurs DE L'UTILISATEUR CONNECTÉ : l'onglet listait
+            // auparavant tout le catalogue, y compris les serveurs des autres
+            // hébergeurs (qu'il ne peut de toute façon ni modifier ni supprimer,
+            // le Worker vérifiant la propriété à chaque écriture).
             const userServers = connected
-                ? (catalog || [])
-                : mockServers.filter(s => s.creator === 'Moi' || s.creator === 'Valkyrie_91' || s.creator === 'Hexa_Miner');
+                ? (catalog || []).filter(isOwnedByCurrentUser)
+                : mockServers.filter(s => s.creator === 'Moi');
 
             if (userServers.length === 0) {
                 container.innerHTML = `<span class="text-xs text-neutral-500 italic p-4 block text-center">Aucun serveur publié par vos soins pour le moment.</span>`;

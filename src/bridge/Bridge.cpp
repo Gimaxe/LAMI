@@ -58,6 +58,7 @@ QJsonObject serverToUiJson(const ServerInfo &s)
         {"resourcePacks", namesOf(s.resourcePacks)},
         {"shaders", namesOf(s.shaders)},
         {"creator", s.ownerName},   // pseudo vérifié du publieur ('' si ancien manifeste)
+        {"owner", s.owner},         // UUID du propriétaire : « Mes publications » filtre dessus
         {"installed", false},
     };
 }
