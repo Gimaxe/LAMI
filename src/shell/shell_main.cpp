@@ -64,12 +64,13 @@ std::string uiUrl(const std::string &dir)
 #ifdef _WIN32
 PROCESS_INFORMATION g_backend{};
 
-void startBackend(const std::string &dir)
+int startBackend(const std::string &dir)
 {
     std::string cmd = "\"" + dir + "\\lami_backend.exe\" --port " + std::to_string(kWsPort);
     STARTUPINFOA si{}; si.cb = sizeof(si);
     CreateProcessA(nullptr, cmd.data(), nullptr, nullptr, FALSE,
                    CREATE_NO_WINDOW, nullptr, dir.c_str(), &si, &g_backend);
+    return kWsPort;   // Windows conserve le port fixe (comportement éprouvé)
 }
 
 void stopBackend()
@@ -83,32 +84,50 @@ void stopBackend()
 #else
 pid_t g_backend = 0;
 
-void startBackend(const std::string &dir)
+// Démarre le moteur et renvoie le port sur lequel il écoute RÉELLEMENT (0 s'il
+// n'a pas démarré). On demande « --port 0 » : le système attribue un port libre,
+// que le moteur annonce sur sa sortie standard. Un port fixe échouait dès qu'une
+// autre instance de LAMI tournait déjà — le moteur mourait alors au démarrage.
+int startBackend(const std::string &dir)
 {
+    int fds[2];
+    if (pipe(fds) != 0)
+        return 0;
+
     g_backend = fork();
     if (g_backend == 0) {
+        close(fds[0]);
+        dup2(fds[1], STDOUT_FILENO);
+        close(fds[1]);
         const std::string bin = dir + "/lami_backend";
-        execl(bin.c_str(), "lami_backend", "--port", std::to_string(kWsPort).c_str(),
-              static_cast<char *>(nullptr));
+        execl(bin.c_str(), "lami_backend", "--port", "0", static_cast<char *>(nullptr));
         _exit(127);
     }
+    close(fds[1]);
+    if (g_backend < 0) { close(fds[0]); return 0; }
+
+    // Lecture de « LAMI_BACKEND_READY <port> ». Si le moteur meurt, le tube se
+    // ferme (lecture à 0) : pas d'attente infinie.
+    std::string out;
+    char buf[256];
+    ssize_t n;
+    while ((n = read(fds[0], buf, sizeof(buf))) > 0) {
+        out.append(buf, static_cast<size_t>(n));
+        if (out.find('\n') != std::string::npos)
+            break;
+    }
+    close(fds[0]);
+
+    const auto pos = out.find("LAMI_BACKEND_READY ");
+    if (pos == std::string::npos)
+        return 0;
+    return std::atoi(out.c_str() + pos + 19);
 }
 
 void stopBackend()
 {
     if (g_backend > 0)
         kill(g_backend, SIGTERM);
-}
-
-// Le moteur (lami_backend) est lié à Qt 6, contrairement à cette coquille :
-// sans ces bibliothèques, la fenêtre s'ouvre mais rien ne fonctionne. On
-// détecte le cas pour l'expliquer, au lieu du laconique « Backend non connecté ».
-bool backendAlive()
-{
-    if (g_backend <= 0)
-        return false;
-    int status = 0;
-    return waitpid(g_backend, &status, WNOHANG) == 0;
 }
 
 // Diagnostic lisible : bibliothèques manquantes rapportées par ldd.
@@ -130,6 +149,36 @@ std::string backendDiagnostic(const std::string &dir)
     }
     return missing;
 }
+
+// Page d'erreur écrite dans un FICHIER puis chargée en file://. Une data: URL
+// contenant espaces et accents non encodés s'affichait en page blanche sous
+// WebKitGTK — l'utilisateur ne voyait donc même pas le message.
+std::string writeErrorPage(const std::string &dir)
+{
+    const std::string missing = backendDiagnostic(dir);
+    const std::string path = "/tmp/lami-erreur.html";
+    FILE *f = fopen(path.c_str(), "w");
+    if (!f)
+        return {};
+    fprintf(f,
+        "<!doctype html><html><head><meta charset='utf-8'></head>"
+        "<body style='background:#0a0a0a;color:#e5e5e5;font-family:system-ui,sans-serif;"
+        "padding:48px;line-height:1.6'>"
+        "<h1 style='color:#06b6d4'>Le moteur de LAMI n'a pas d&eacute;marr&eacute;</h1>"
+        "<p>La fen&ecirc;tre fonctionne, mais le composant qui t&eacute;l&eacute;charge et lance "
+        "Minecraft n'a pas pu se lancer.</p>%s"
+        "<p>Essaie de fermer les autres fen&ecirc;tres de LAMI, puis relance-le. "
+        "Si le probl&egrave;me persiste, lance cette commande dans un terminal pour voir "
+        "l'erreur exacte&nbsp;:</p>"
+        "<pre style='background:#171717;padding:16px;border-radius:12px;overflow:auto'>"
+        "%s/lami_backend --port 0</pre>"
+        "</body></html>",
+        missing.empty() ? ""
+                        : ("<p>Biblioth&egrave;ques manquantes&nbsp;:</p><ul>" + missing + "</ul>").c_str(),
+        dir.c_str());
+    fclose(f);
+    return "file://" + path;
+}
 #endif
 
 } // namespace
@@ -146,7 +195,8 @@ int main()
 #endif
 
     const std::string dir = exeDir();
-    startBackend(dir);
+    // Port EFFECTIF du moteur (0 = il n'a pas démarré).
+    const int backendPort = startBackend(dir);
 
     webview::webview w(/*debug=*/false, nullptr);
     w.set_title("LAMI");
@@ -223,35 +273,19 @@ int main()
         return "true";
     });
 
-    w.init("window.LAMI_WS_PORT = " + std::to_string(kWsPort) + ";");
+    w.init("window.LAMI_WS_PORT = " + std::to_string(backendPort > 0 ? backendPort : kWsPort) + ";");
 
 #ifndef _WIN32
-    // Le moteur meurt aussitôt s'il manque Qt 6 : on affiche une page qui dit
-    // quoi installer, plutôt que de laisser l'utilisateur face à une interface
-    // inerte qui répond « Backend non connecté ».
-    usleep(700 * 1000);
-    if (!backendAlive()) {
-        const std::string missing = backendDiagnostic(dir);
-        const std::string page =
-            "data:text/html;charset=utf-8,<html><body style='background:#0a0a0a;color:#e5e5e5;"
-            "font-family:system-ui,sans-serif;padding:48px;line-height:1.6'>"
-            "<h1 style='color:%2306b6d4'>Le moteur de LAMI n'a pas démarré</h1>"
-            "<p>La fenêtre fonctionne, mais le composant qui télécharge et lance "
-            "Minecraft n'a pas pu se lancer : il lui manque des bibliothèques "
-            "<b>Qt&nbsp;6</b>.</p>"
-            + (missing.empty() ? "" : "<p>Bibliothèques manquantes :</p><ul>" + missing + "</ul>")
-            + "<p>Installe-les puis relance LAMI :</p>"
-            "<pre style='background:%23171717;padding:16px;border-radius:12px;overflow:auto'>"
-            "sudo apt install -y libqt6core6 libqt6network6 libqt6websockets6</pre>"
-            "<p style='color:%23a3a3a3;font-size:14px'>Selon la distribution&nbsp;: "
-            "<code>qt6-base-dev qt6-websockets-dev</code> (Debian/Ubuntu), "
-            "<code>qt6-qtbase qt6-qtwebsockets</code> (Fedora), "
-            "<code>qt6-base qt6-websockets</code> (Arch).</p>"
-            "</body></html>";
-        w.navigate(page);
-        w.run();
-        stopBackend();
-        return 1;
+    // Le moteur n'a pas démarré (port occupé, Qt manquant…) : page explicative
+    // au lieu d'une interface inerte — ou, pire, d'une page blanche.
+    if (backendPort <= 0) {
+        const std::string page = writeErrorPage(dir);
+        if (!page.empty()) {
+            w.navigate(page);
+            w.run();
+            stopBackend();
+            return 1;
+        }
     }
 #endif
 
