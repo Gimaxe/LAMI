@@ -136,6 +136,15 @@ std::string backendDiagnostic(const std::string &dir)
 
 int main()
 {
+#ifndef _WIN32
+    // Identité de l'application, AVANT toute initialisation GTK : c'est elle qui
+    // devient l'app_id sous Wayland et le WM_CLASS sous X11. Le fichier
+    // lami.desktop porte le même nom (StartupWMClass=lami), ce qui permet au
+    // bureau d'afficher la bonne icône dans la barre des tâches.
+    g_set_prgname("lami");
+    g_set_application_name("LAMI");
+#endif
+
     const std::string dir = exeDir();
     startBackend(dir);
 
@@ -170,10 +179,21 @@ int main()
         setIcon(GetSystemMetrics(SM_CXSMICON), ICON_SMALL);
     }
 #else
-    // Linux : chargement direct du PNG dans la GtkWindow.
-    if (GtkWidget *win = static_cast<GtkWidget *>(w.window()))
-        gtk_window_set_icon_from_file(GTK_WINDOW(win),
-                                      (dir + "/web/assets/lami-icon.png").c_str(), nullptr);
+    // Linux : l'icône de la barre des tâches vient du thème d'icônes, retrouvée
+    // à partir de l'identité de l'application — PAS d'un fichier PNG.
+    // gtk_window_set_icon_from_file() est ignoré sous Wayland : le compositeur
+    // associe la fenêtre à son .desktop via l'app_id (Wayland) / WM_CLASS (X11),
+    // d'où l'icône générique en roue dentée quand il ne trouve rien.
+    // g_set_prgname() est posé avant, dans main().
+    gtk_window_set_default_icon_name("lami");
+    if (GtkWidget *win = static_cast<GtkWidget *>(w.window())) {
+        gtk_window_set_icon_name(GTK_WINDOW(win), "lami");
+        // Repli si le thème ne connaît pas encore « lami » (exécution portable,
+        // sans installation) : on charge le PNG livré avec l'app.
+        if (!gtk_icon_theme_has_icon(gtk_icon_theme_get_default(), "lami"))
+            gtk_window_set_icon_from_file(GTK_WINDOW(win),
+                                          (dir + "/web/assets/lami-icon.png").c_str(), nullptr);
+    }
 #endif
 
     // Contrôle de la fenêtre depuis l'UI (réglage « Fermeture du launcher ») :

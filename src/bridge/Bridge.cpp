@@ -264,6 +264,18 @@ void Bridge::installUpdate(int id, const QJsonObject &params)
     const QString wantPlatform = "windows";
     const QString wantExt = ".zip";
 #else
+    // Installation SYSTÈME (paquet .deb dans /opt) : le dossier n'appartient pas
+    // à l'utilisateur, une mise à jour en place échouerait. On renvoie vers le
+    // paquet officiel, que le gestionnaire de paquets installera proprement.
+    const QString installDirCheck = QCoreApplication::applicationDirPath();
+    if (!QFileInfo(installDirCheck).isWritable()) {
+        emit event(QJsonObject{{"event", "updateProgress"},
+                               {"step", "Téléchargement du paquet…"}, {"percent", 10}});
+        openUrl(id, QJsonObject{
+            {"url", "https://github.com/Gimaxe/LAMI/releases/latest/download/LAMI.deb"}});
+        emit event(QJsonObject{{"event", "updateManual"}});
+        return;
+    }
     const QString wantPlatform = "linux";
     const QString wantExt = ".tar.gz";
 #endif

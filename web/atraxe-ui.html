@@ -1291,7 +1291,7 @@
 
     <script>
         // Version de l'app — incrémentée à CHAQUE build/.exe (suivi de l'avancement).
-        const LAMI_VERSION = "0.72.0";
+        const LAMI_VERSION = "0.73.0";
 
         let currentRole = 'player'; // 'player', 'host', 'admin'
         let currentTab = 'rejoindre';
@@ -1633,6 +1633,15 @@
                     const st = document.getElementById('update-progress-status');
                     if (bar && typeof m.percent === 'number') bar.style.width = m.percent + '%';
                     if (st && m.step) st.innerText = m.step + (typeof m.percent === 'number' ? ' (' + m.percent + '%)' : '');
+                });
+                // Installation système (paquet Linux) : la mise à jour passe par
+                // le gestionnaire de paquets, pas par un remplacement en place.
+                lami.on('updateManual', function () {
+                    const st = document.getElementById('update-progress-status');
+                    if (st) st.innerText = "Le paquet a été téléchargé : installe-le puis relance LAMI.";
+                    const bar = document.getElementById('update-progress-bar');
+                    if (bar) bar.style.width = '100%';
+                    showToast("Ouvre le paquet téléchargé pour terminer la mise à jour.", "info");
                 });
                 lami.on('downloadDone', function (m) {
                     if (m.id !== activeDownload.serverId) return;

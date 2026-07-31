@@ -12,18 +12,31 @@ Minecraft, le mod loader, les mods, resource packs et shaders — puis lance le 
 |---|---|---|
 | **Windows** | [**Installeur (.exe)**](https://github.com/Gimaxe/LAMI/releases/latest/download/LAMI-Setup.exe) | recommandé — installe et crée les raccourcis |
 | **Windows** | [Version portable (.zip)](https://github.com/Gimaxe/LAMI/releases/latest/download/LAMI-windows.zip) | à décompresser, aucune installation |
-| **Linux** | [Archive (.tar.gz)](https://github.com/Gimaxe/LAMI/releases/latest/download/LAMI-linux.tar.gz) | contient `install.sh` |
+| **Linux (Debian/Ubuntu/Mint)** | [**Paquet (.deb)**](https://github.com/Gimaxe/LAMI/releases/latest/download/LAMI.deb) | recommandé — vraie application système |
+| **Linux (autres)** | [Archive (.tar.gz)](https://github.com/Gimaxe/LAMI/releases/latest/download/LAMI-linux.tar.gz) | installation par utilisateur via `install.sh` |
 
 Ces liens pointent **toujours vers la dernière version**.
 [Toutes les versions et notes de publication →](https://github.com/Gimaxe/LAMI/releases/latest)
 
-Installation Linux (aucune dépendance à installer : Qt est embarqué) :
+### Linux — paquet .deb (recommandé)
+
+Double-clique le fichier téléchargé, ou :
+```bash
+sudo apt install ./LAMI.deb
+```
+Tout le nécessaire est installé automatiquement : Qt est fourni avec
+l'application, et les composants système manquants sont tirés par apt. LAMI
+apparaît ensuite dans le menu et dans le **centre d'applications**, d'où il peut
+être désinstallé en un clic (ou `sudo apt remove lami`).
+
+### Linux — archive portable
+
 ```bash
 tar xzf LAMI-linux.tar.gz && ./install.sh
 ```
-L'application va dans `~/.local/lib/LAMI`, séparée de tes données
-(`~/.local/share/LAMI`) : la désinstallation ne touche jamais aux instances,
-skins et réglages.
+Installation par utilisateur, sans droits administrateur : l'application va dans
+`~/.local/lib/LAMI`, séparée de tes données (`~/.local/share/LAMI`) — la
+désinstallation ne touche jamais aux instances, skins et réglages.
 
 Le launcher se met à jour tout seul : il vérifie au démarrage et propose l'installation.
 

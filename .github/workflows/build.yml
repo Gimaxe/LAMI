@@ -116,6 +116,25 @@ jobs:
           grep -q LAMI_BACKEND_READY /tmp/b.log \
             || (echo "le moteur n'a pas démarré depuis le paquet" && cat /tmp/b.log && exit 1)
 
+      - name: Lire la version
+        id: ver
+        run: echo "version=$(grep -oP 'LAMI_VERSION = \"\K[0-9.]+' web/atraxe-ui.html)" >> "$GITHUB_OUTPUT"
+
+      - name: Construire le paquet .deb
+        run: |
+          chmod +x installer/linux/build-deb.sh
+          ./installer/linux/build-deb.sh "${{ steps.ver.outputs.version }}" build .
+          # Vérifications : dépendances déclarées et entrée de menu présentes.
+          dpkg-deb -I LAMI_*_amd64.deb | grep -q 'Depends:' || exit 1
+          dpkg-deb -c LAMI_*_amd64.deb | grep -q 'usr/share/applications/lami.desktop' || exit 1
+          dpkg-deb -c LAMI_*_amd64.deb | grep -q 'icons/hicolor/256x256/apps/lami.png' || exit 1
+
+      - name: Publier le paquet .deb
+        uses: actions/upload-artifact@v4
+        with:
+          name: LAMI-deb
+          path: LAMI_*_amd64.deb
+
       - name: Publier l'artéfact Linux
         uses: actions/upload-artifact@v4
         with:
@@ -145,11 +164,14 @@ jobs:
           cd artifacts/LAMI-windows && zip -r ../../LAMI-windows-v${{ steps.ver.outputs.version }}.zip . && cd ../..
           cp artifacts/LAMI-linux/LAMI-linux.tar.gz LAMI-linux-v${{ steps.ver.outputs.version }}.tar.gz
           cp artifacts/LAMI-windows-setup/*.exe . || true
+          cp artifacts/LAMI-deb/*.deb . || true
           # Copies à NOM FIXE : permettent des liens de téléchargement permanents
-          # (…/releases/latest/download/LAMI-Setup.exe) utilisés par le README.
+          # (…/releases/latest/download/LAMI.deb) utilisés par le README et par la
+          # mise à jour depuis une installation système.
           cp LAMI-Setup-v*.exe LAMI-Setup.exe || true
           cp LAMI-windows-v*.zip LAMI-windows.zip
           cp LAMI-linux-v*.tar.gz LAMI-linux.tar.gz
+          cp LAMI_*_amd64.deb LAMI.deb || true
 
       - name: Créer / mettre à jour la Release
         uses: softprops/action-gh-release@v2
@@ -160,6 +182,8 @@ jobs:
             LAMI-Setup-v*.exe
             LAMI-windows-v*.zip
             LAMI-linux-v*.tar.gz
+            LAMI_*_amd64.deb
             LAMI-Setup.exe
             LAMI-windows.zip
             LAMI-linux.tar.gz
+            LAMI.deb
