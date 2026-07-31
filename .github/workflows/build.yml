@@ -99,14 +99,22 @@ jobs:
           cmake -B build -DCMAKE_BUILD_TYPE=Release -DLAMI_BUILD_TESTS=OFF
           cmake --build build -j$(nproc) --target lami_backend lami_shell
 
-      - name: Empaqueter
+      - name: Empaqueter en autonome avec Qt embarqué
         run: |
-          mkdir -p dist
-          cp build/lami_backend build/lami_shell dist/
-          cp -r web dist/web
-          cp installer/linux/install.sh dist/install.sh
-          chmod +x dist/install.sh
+          chmod +x installer/linux/bundle.sh
+          ./installer/linux/bundle.sh build dist
           tar czf LAMI-linux.tar.gz -C dist .
+
+      - name: Vérifier que le paquet fonctionne sans Qt système
+        run: |
+          # Le moteur doit démarrer et faire du HTTPS avec les seules
+          # bibliothèques embarquées (sinon : « Backend non connecté »).
+          test -f dist/plugins/tls/libqopensslbackend.so
+          ldd dist/lami_backend | grep -q 'lib/libQt6Core' \
+            || (echo "RPATH non appliqué : Qt serait cherché sur le système" && exit 1)
+          (cd dist && timeout 20 ./lami_backend --port 8899 > /tmp/b.log 2>&1 &) ; sleep 4
+          grep -q LAMI_BACKEND_READY /tmp/b.log \
+            || (echo "le moteur n'a pas démarré depuis le paquet" && cat /tmp/b.log && exit 1)
 
       - name: Publier l'artéfact Linux
         uses: actions/upload-artifact@v4

@@ -17,10 +17,13 @@ Minecraft, le mod loader, les mods, resource packs et shaders — puis lance le 
 Ces liens pointent **toujours vers la dernière version**.
 [Toutes les versions et notes de publication →](https://github.com/Gimaxe/LAMI/releases/latest)
 
-Installation Linux :
+Installation Linux (aucune dépendance à installer : Qt est embarqué) :
 ```bash
 tar xzf LAMI-linux.tar.gz && ./install.sh
 ```
+L'application va dans `~/.local/lib/LAMI`, séparée de tes données
+(`~/.local/share/LAMI`) : la désinstallation ne touche jamais aux instances,
+skins et réglages.
 
 Le launcher se met à jour tout seul : il vérifie au démarrage et propose l'installation.
 
@@ -92,7 +95,7 @@ LAMI/
 ├── web/             # interface (HTML/JS, Three.js pour les skins)
 ├── worker/          # Worker Cloudflare (écritures, rôles, cache)
 ├── relay/           # relais de vérification d'identité (Deno Deploy)
-└── installer/       # Inno Setup (Windows) et script d'installation (Linux)
+└── installer/       # Inno Setup (Windows) ; bundle.sh + install.sh (Linux)
 ```
 
 Plusieurs sous-dossiers de `src/` contiennent un `README.md` détaillant leur rôle

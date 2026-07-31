@@ -2,6 +2,7 @@
 // WebKitGTK sur Linux) affichant l'UI HTML, et démarre le backend WebSocket en
 // enfant. L'UI (JS) se connecte au backend via ws://127.0.0.1:<port>.
 
+#include <cstdio>
 #include <string>
 
 #include "webview.h"
@@ -11,6 +12,7 @@
 #else
 #include <climits>
 #include <csignal>
+#include <sys/wait.h>
 #include <unistd.h>
 #include <gtk/gtk.h>   // icône de fenêtre (GtkWindow)
 #endif
@@ -97,6 +99,37 @@ void stopBackend()
     if (g_backend > 0)
         kill(g_backend, SIGTERM);
 }
+
+// Le moteur (lami_backend) est lié à Qt 6, contrairement à cette coquille :
+// sans ces bibliothèques, la fenêtre s'ouvre mais rien ne fonctionne. On
+// détecte le cas pour l'expliquer, au lieu du laconique « Backend non connecté ».
+bool backendAlive()
+{
+    if (g_backend <= 0)
+        return false;
+    int status = 0;
+    return waitpid(g_backend, &status, WNOHANG) == 0;
+}
+
+// Diagnostic lisible : bibliothèques manquantes rapportées par ldd.
+std::string backendDiagnostic(const std::string &dir)
+{
+    std::string missing;
+    const std::string cmd = "ldd '" + dir + "/lami_backend' 2>/dev/null | grep 'not found'";
+    if (FILE *p = popen(cmd.c_str(), "r")) {
+        char line[512];
+        while (fgets(line, sizeof(line), p)) {
+            std::string s(line);
+            const auto cut = s.find(" =>");
+            if (cut != std::string::npos) s = s.substr(0, cut);
+            while (!s.empty() && (s.front() == ' ' || s.front() == '\t')) s.erase(s.begin());
+            while (!s.empty() && (s.back() == '\n' || s.back() == ' ')) s.pop_back();
+            if (!s.empty()) missing += "<li>" + s + "</li>";
+        }
+        pclose(p);
+    }
+    return missing;
+}
 #endif
 
 } // namespace
@@ -171,6 +204,37 @@ int main()
     });
 
     w.init("window.LAMI_WS_PORT = " + std::to_string(kWsPort) + ";");
+
+#ifndef _WIN32
+    // Le moteur meurt aussitôt s'il manque Qt 6 : on affiche une page qui dit
+    // quoi installer, plutôt que de laisser l'utilisateur face à une interface
+    // inerte qui répond « Backend non connecté ».
+    usleep(700 * 1000);
+    if (!backendAlive()) {
+        const std::string missing = backendDiagnostic(dir);
+        const std::string page =
+            "data:text/html;charset=utf-8,<html><body style='background:#0a0a0a;color:#e5e5e5;"
+            "font-family:system-ui,sans-serif;padding:48px;line-height:1.6'>"
+            "<h1 style='color:%2306b6d4'>Le moteur de LAMI n'a pas démarré</h1>"
+            "<p>La fenêtre fonctionne, mais le composant qui télécharge et lance "
+            "Minecraft n'a pas pu se lancer : il lui manque des bibliothèques "
+            "<b>Qt&nbsp;6</b>.</p>"
+            + (missing.empty() ? "" : "<p>Bibliothèques manquantes :</p><ul>" + missing + "</ul>")
+            + "<p>Installe-les puis relance LAMI :</p>"
+            "<pre style='background:%23171717;padding:16px;border-radius:12px;overflow:auto'>"
+            "sudo apt install -y libqt6core6 libqt6network6 libqt6websockets6</pre>"
+            "<p style='color:%23a3a3a3;font-size:14px'>Selon la distribution&nbsp;: "
+            "<code>qt6-base-dev qt6-websockets-dev</code> (Debian/Ubuntu), "
+            "<code>qt6-qtbase qt6-qtwebsockets</code> (Fedora), "
+            "<code>qt6-base qt6-websockets</code> (Arch).</p>"
+            "</body></html>";
+        w.navigate(page);
+        w.run();
+        stopBackend();
+        return 1;
+    }
+#endif
+
     w.navigate(uiUrl(dir));
     w.run();
 

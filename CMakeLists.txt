@@ -320,6 +320,16 @@ target_include_directories(lami_backend PRIVATE src third_party/miniz)
 target_link_libraries(lami_backend PRIVATE
     Qt${QT_VERSION_MAJOR}::Network Qt${QT_VERSION_MAJOR}::WebSockets)
 
+# Linux : chercher les bibliothèques À CÔTÉ de l'exécutable (dossier lib/).
+# Le paquet distribué embarque Qt — sans quoi le moteur ne démarre pas sur une
+# machine sans Qt 6, et le launcher reste bloqué sur « Backend non connecté ».
+if(UNIX AND NOT APPLE)
+    set_target_properties(lami_backend PROPERTIES
+        BUILD_WITH_INSTALL_RPATH FALSE
+        INSTALL_RPATH "$ORIGIN/lib"
+        BUILD_RPATH "$ORIGIN/lib")
+endif()
+
 # Stockage sécurisé du refresh token (module Secret) :
 if(WIN32)
     target_link_libraries(lami_backend PRIVATE crypt32)   # DPAPI
